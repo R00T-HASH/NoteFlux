@@ -99,7 +99,7 @@ export const useVoiceCommands = ({ editor, onCommandExecuted, enableStreaming = 
         try {
           recognition.start();
         } catch (e) {
-          console.log('Recognition restart failed, stopping');
+          // console.log('Recognition restart failed, stopping');
           setIsListening(false);
           setIsProcessing(false);
           setTranscript('');
@@ -307,11 +307,11 @@ export const useVoiceCommands = ({ editor, onCommandExecuted, enableStreaming = 
     setIsStreamingMode(!isStreamingMode);
     recognitionRef.current = null; // Force recreation with new settings
     
-    toast.info(
-      !isStreamingMode 
-        ? "🚀 Streaming mode enabled - Real-time processing with Grok API" 
-        : "📝 Single command mode enabled"
-    );
+    // toast.info(
+    //   !isStreamingMode 
+    //     ? "🚀 Streaming mode enabled - Real-time processing with Grok API" 
+    //     : "📝 Single command mode enabled"
+    // );
   }, [isStreamingMode, isListening, stopListening]);
 
   const getAvailableCommands = useCallback(() => {

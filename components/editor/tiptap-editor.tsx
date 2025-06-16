@@ -259,6 +259,7 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, onTransc
           <div className={`w-px h-6 ${separatorColor} mx-2`} />
 
           {/* Voice Commands */}
+          {/* 
           <div className="relative">
             <ToolbarButton
               onClick={toggleListening}
@@ -277,13 +278,13 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, onTransc
               {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
             </ToolbarButton>
             
-            {/* Voice status indicator */}
+            Voice status indicator
             {(isListening || isProcessing) && (
               <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse" />
             )}
           </div>
 
-          {/* Streaming Mode Toggle */}
+          Streaming Mode Toggle
           <ToolbarButton
             onClick={toggleStreamingMode}
             isActive={isStreamingMode}
@@ -296,7 +297,10 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, onTransc
           >
             {isStreamingMode ? <Zap className="h-4 w-4" /> : <ZapOff className="h-4 w-4" />}
           </ToolbarButton>
+          */}
 
+          {/* Voice Help Button - Commented out for now */}
+          {/*
           <ToolbarButton
             onClick={() => setShowVoiceHelp(!showVoiceHelp)}
             disabled={!isEditorReady || !editor?.isEditable}
@@ -305,10 +309,11 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, onTransc
             <HelpCircle className="h-4 w-4" />
           </ToolbarButton>
 
-          {/* Voice Help Popup */}
+          Voice Help Popup
           {showVoiceHelp && <VoiceCommandHelp />}
 
           <div className={`w-px h-6 ${separatorColor} mx-2`} />
+          */}
 
           {/* Text Formatting */}
           <ToolbarButton
@@ -439,7 +444,8 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, onTransc
           </ToolbarButton>
         </div>
 
-        {/* Voice Status Display */}
+        {/* Voice Status and Streaming Indicators - Commented out for now */}
+        {/*
         {(isListening || transcript || isProcessing || streamingProgress > 0) && (
           <div className="mt-3 pt-3 border-t border-gray-600">
             <div className="flex items-center gap-2 text-sm flex-wrap">
@@ -470,7 +476,6 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, onTransc
               )}
             </div>
             
-            {/* Streaming mode indicator */}
             {isStreamingMode && (
               <div className="mt-2 text-xs text-purple-400">
                 <span className="font-medium">⚡ Streaming Mode:</span> Real-time processing with Grok API
@@ -482,16 +487,14 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, onTransc
               </div>
             )}
             
-            {/* Buffer state for debugging (only in development) */}
-            {process.env.NODE_ENV === 'development' && isStreamingMode && (
-              <div className="mt-1 text-xs text-gray-600">
-                Buffer: {getBufferState().buffer || 'empty'} | 
-                Queue: {getBufferState().queueLength} | 
-                Processing: {getBufferState().isProcessing ? 'yes' : 'no'}
+            {process.env.NODE_ENV === 'development' && getBufferState && (
+              <div className="mt-2 text-xs text-gray-500 font-mono">
+                <div>Buffer: {getBufferState().buffer || 'empty'} | Queue: {getBufferState().queueLength} | Processing: {getBufferState().isProcessing ? 'yes' : 'no'}</div>
               </div>
             )}
           </div>
         )}
+        */}
       </div>
 
       {/* Editor Content */}

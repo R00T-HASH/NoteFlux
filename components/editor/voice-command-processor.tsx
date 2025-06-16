@@ -126,8 +126,8 @@ export class VoiceCommandProcessor {
       : null;
     
     if (this.grokApiKey) {
-      console.log('🔑 Grok/OpenRouter API initialized for real-time voice processing');
-      console.log('🔍 API Key format check:', this.grokApiKey.substring(0, 10) + '...');
+      // console.log('🔑 Grok/OpenRouter API initialized for real-time voice processing');
+      // console.log('🔍 API Key format check:', this.grokApiKey.substring(0, 10) + '...');
     } else {
       console.warn('⚠️ No API key found - set NEXT_PUBLIC_GROK_API_KEY or NEXT_PUBLIC_OPENROUTER_API_KEY');
       console.warn('📝 Falling back to pattern matching only');
@@ -137,7 +137,7 @@ export class VoiceCommandProcessor {
   // Process streaming transcript chunks in real-time
   async processStreamingChunk(chunk: StreamingChunk, editor: Editor): Promise<boolean> {
     const startTime = performance.now();
-    console.log('🚀 Processing streaming chunk:', chunk);
+    // console.log('🚀 Processing streaming chunk:', chunk);
     
     // Add to processing queue
     this.processingQueue.push(chunk);
@@ -147,7 +147,7 @@ export class VoiceCommandProcessor {
     if (this.shouldProcessBuffer(chunk)) {
       const result = await this.processBufferedStream(editor);
       const endTime = performance.now();
-      console.log(`⚡ Streaming processing took ${endTime - startTime}ms`);
+      // console.log(`⚡ Streaming processing took ${endTime - startTime}ms`);
       return result;
     }
 
@@ -214,7 +214,7 @@ export class VoiceCommandProcessor {
       if (this.grokApiKey) {
         // Use grok-2 for consistent processing
         const model = 'grok-2'; // Use grok-2 alias which should work with both APIs
-        console.log(`🚀 Using ${model} for ultra-fast streaming processing`);
+        // console.log(`🚀 Using ${model} for ultra-fast streaming processing`);
         
         const useFastMode = this.processingQueue.some(chunk => chunk.confidence && chunk.confidence < 0.9);
         const aiResult = await this.processWithGrokStreaming(this.streamBuffer, editor, useFastMode);
@@ -249,7 +249,7 @@ export class VoiceCommandProcessor {
                 editor.commands.focus();
               }
               command.action(editor);
-              console.log('Pattern match executed:', pattern);
+              // console.log('Pattern match executed:', pattern);
               return true;
             } catch (error) {
               console.error('Error executing voice command:', error);
@@ -274,9 +274,9 @@ export class VoiceCommandProcessor {
       
       // Use correct Grok model names - grok-2 is the alias that works
       const model = 'grok-2'; // Use grok-2 alias which should work with both APIs
-      console.log(`🚀 Using ${model} for ultra-fast streaming processing`);
-      console.log(`📝 Processing command: "${text}"`);
-      console.log(`📄 Current content length: ${htmlContent.length} chars`);
+      // console.log(`🚀 Using ${model} for ultra-fast streaming processing`);
+      // console.log(`📝 Processing command: "${text}"`);
+      // console.log(`📄 Current content length: ${htmlContent.length} chars`);
       
       // Determine if we're using OpenRouter or direct xAI API
       const isOpenRouter = this.grokApiKey.startsWith('sk-or-');
@@ -284,7 +284,7 @@ export class VoiceCommandProcessor {
         ? 'https://openrouter.ai/api/v1/chat/completions'
         : 'https://api.x.ai/v1/chat/completions';
       
-      console.log(`🌐 Using API: ${isOpenRouter ? 'OpenRouter' : 'xAI Direct'}`);
+      // console.log(`🌐 Using API: ${isOpenRouter ? 'OpenRouter' : 'xAI Direct'}`);
       
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -349,7 +349,7 @@ RESPONSE: HTML only, no explanations.`
         body: JSON.stringify(requestBody),
       });
 
-      console.log(`📡 API Response status: ${response.status}`);
+      // console.log(`📡 API Response status: ${response.status}`);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -379,7 +379,7 @@ RESPONSE: HTML only, no explanations.`
       let accumulatedResponse = '';
       const decoder = new TextDecoder();
 
-      console.log('🔄 Starting to process streaming response...');
+      // console.log('🔄 Starting to process streaming response...');
 
       while (true) {
         const { done, value } = await reader.read();
@@ -411,8 +411,8 @@ RESPONSE: HTML only, no explanations.`
         }
       }
 
-      console.log('✅ Final response length:', accumulatedResponse.length);
-      console.log('📝 Response preview:', accumulatedResponse.substring(0, 200) + '...');
+      // console.log('✅ Final response length:', accumulatedResponse.length);
+      // console.log('📝 Response preview:', accumulatedResponse.substring(0, 200) + '...');
 
       // Apply final result with better validation
       if (accumulatedResponse && accumulatedResponse.trim() !== htmlContent.trim()) {
@@ -420,9 +420,9 @@ RESPONSE: HTML only, no explanations.`
         const cleanedResponse = this.cleanGrokResponse(accumulatedResponse);
         
         if (cleanedResponse && cleanedResponse !== htmlContent) {
-          console.log('🚀 Applying final result to editor...');
+          // console.log('🚀 Applying final result to editor...');
           editor.commands.setContent(cleanedResponse);
-          console.log('✅ Streaming command executed successfully');
+          // console.log('✅ Streaming command executed successfully');
           return true;
         }
       }
@@ -506,7 +506,7 @@ RESPONSE: HTML only, no explanations.`
     editor: Editor,
     onProgress?: (progress: number) => void
   ): Promise<void> {
-    console.log('Processing transcript stream with', transcriptChunks.length, 'chunks');
+    // console.log('Processing transcript stream with', transcriptChunks.length, 'chunks');
     
     for (let i = 0; i < transcriptChunks.length; i++) {
       const chunk: StreamingChunk = {
