@@ -3,7 +3,7 @@ import { CreateUsageData, UsageRecord, UserUsage } from '@/lib/types/usage';
 
 export class UsageService {
   private supabase = createClient();
-  private readonly FREE_TIER_MINUTES = 90; // 90 minutes free per user
+  private readonly FREE_TIER_SECONDS = 90 * 60; // 90 minutes = 5400 seconds
 
   async recordUsage(data: CreateUsageData): Promise<{ data: UsageRecord | null; error: any }> {
     try {
@@ -26,7 +26,7 @@ export class UsageService {
 
       if (!error) {
         // Update user's total usage
-        await this.updateUserUsage(user.user.id, data.minutes_used);
+        await this.updateUserUsage(user.user.id, data.seconds_used);
       }
 
       return { data: usage, error };
@@ -54,9 +54,9 @@ export class UsageService {
       if (error && error.code === 'PGRST116') {
         const newUsage = {
           user_id: user.user.id,
-          total_minutes_used: 0,
-          minutes_remaining: this.FREE_TIER_MINUTES,
-          free_tier_limit: this.FREE_TIER_MINUTES,
+          total_seconds_used: 0,
+          seconds_remaining: this.FREE_TIER_SECONDS,
+          free_tier_limit: this.FREE_TIER_SECONDS,
           last_reset_date: new Date().toISOString(),
         };
 
@@ -76,7 +76,7 @@ export class UsageService {
     }
   }
 
-  private async updateUserUsage(userId: string, minutesUsed: number): Promise<void> {
+  private async updateUserUsage(userId: string, secondsUsed: number): Promise<void> {
     try {
       // Get current usage
       const { data: currentUsage } = await this.supabase
@@ -86,14 +86,14 @@ export class UsageService {
         .single();
 
       if (currentUsage) {
-        const newTotalMinutes = currentUsage.total_minutes_used + minutesUsed;
-        const newRemainingMinutes = Math.max(0, this.FREE_TIER_MINUTES - newTotalMinutes);
+        const newTotalSeconds = currentUsage.total_seconds_used + secondsUsed;
+        const newRemainingSeconds = Math.max(0, this.FREE_TIER_SECONDS - newTotalSeconds);
 
         await this.supabase
           .from('user_usage')
           .update({
-            total_minutes_used: newTotalMinutes,
-            minutes_remaining: newRemainingMinutes,
+            total_seconds_used: newTotalSeconds,
+            seconds_remaining: newRemainingSeconds,
             updated_at: new Date().toISOString(),
           })
           .eq('user_id', userId);
@@ -103,16 +103,16 @@ export class UsageService {
     }
   }
 
-  async canUseService(): Promise<{ canUse: boolean; minutesRemaining: number }> {
+  async canUseService(): Promise<{ canUse: boolean; secondsRemaining: number }> {
     const { data: usage } = await this.getUserUsage();
     
     if (!usage) {
-      return { canUse: true, minutesRemaining: this.FREE_TIER_MINUTES };
+      return { canUse: true, secondsRemaining: this.FREE_TIER_SECONDS };
     }
 
     return {
-      canUse: usage.minutes_remaining > 0,
-      minutesRemaining: usage.minutes_remaining
+      canUse: usage.seconds_remaining > 0,
+      secondsRemaining: usage.seconds_remaining
     };
   }
 

@@ -2,7 +2,7 @@ export interface UsageRecord {
   id: string;
   user_id: string;
   session_id: string;
-  minutes_used: number;
+  seconds_used: number;
   voice_agent: 'deepgram';
   model: string;
   created_at: string;
@@ -10,8 +10,8 @@ export interface UsageRecord {
 
 export interface UserUsage {
   user_id: string;
-  total_minutes_used: number;
-  minutes_remaining: number;
+  total_seconds_used: number;
+  seconds_remaining: number;
   free_tier_limit: number;
   last_reset_date: string;
   created_at: string;
@@ -20,7 +20,7 @@ export interface UserUsage {
 
 export interface CreateUsageData {
   session_id: string;
-  minutes_used: number;
+  seconds_used: number;
   voice_agent: 'deepgram';
   model: string;
 } 

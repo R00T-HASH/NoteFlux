@@ -23,11 +23,10 @@ export class GrokService {
       : 'https://api.x.ai/v1';
     
     if (!this.apiKey) {
-      console.warn('Grok API key not found. Set NEXT_PUBLIC_GROK_API_KEY or NEXT_PUBLIC_OPENROUTER_API_KEY in environment variables.');
-    } else {
-      console.log(`🔑 Grok service initialized with ${this.isOpenRouter ? 'OpenRouter' : 'xAI Direct'} API`);
-      console.log('🔍 API Key format check:', this.apiKey.substring(0, 10) + '...');
+      console.warn('⚠️ Grok API key not found. Set NEXT_PUBLIC_GROK_API_KEY or NEXT_PUBLIC_OPENROUTER_API_KEY in environment variables.');
     }
+    
+    // Removed debug logs for cleaner console output
   }
 
   async correctTranscript(text: string, context: string[] = []): Promise<CorrectionResult> {

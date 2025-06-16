@@ -55,9 +55,12 @@ const UsageTracker = forwardRef<UsageTrackerRef, UsageTrackerProps>(({ className
     return null;
   }
 
-  const usagePercentage = ((usage.free_tier_limit - usage.minutes_remaining) / usage.free_tier_limit) * 100;
-  const isLowUsage = usage.minutes_remaining <= 10;
-  const isOutOfMinutes = usage.minutes_remaining <= 0;
+  // Convert seconds to minutes for display
+  const minutesRemaining = Math.floor(usage.seconds_remaining / 60);
+  const totalMinutesLimit = Math.floor(usage.free_tier_limit / 60);
+  const usagePercentage = ((totalMinutesLimit - minutesRemaining) / totalMinutesLimit) * 100;
+  const isLowUsage = minutesRemaining <= 10;
+  const isOutOfMinutes = minutesRemaining <= 0;
 
   return (
     <div className={`rounded-lg p-4 ${className}`} style={{ border: 'none' }}>
@@ -77,7 +80,7 @@ const UsageTracker = forwardRef<UsageTrackerRef, UsageTrackerProps>(({ className
             isLowUsage ? 'text-yellow-400' : 
             'text-green-400'
           }`}>
-            {usage.minutes_remaining}
+            {minutesRemaining}
           </span>
         </div>
         

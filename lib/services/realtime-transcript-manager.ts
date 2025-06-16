@@ -35,7 +35,6 @@ export class RealtimeTranscriptManager {
   addChunk(text: string, isFinal: boolean = false): void {
     if (!this.isEnabled || !text.trim()) return;
 
-    console.log('📝 Adding chunk:', { text, isFinal });
     this.processor.addChunk(text, isFinal);
     
     // Debounced update to avoid too frequent UI updates
@@ -68,7 +67,6 @@ export class RealtimeTranscriptManager {
 
   // Clear all transcript data
   clear(): void {
-    console.log('🧹 Clearing transcript');
     this.processor.clear();
     this.notifyUpdate();
   }
@@ -76,14 +74,12 @@ export class RealtimeTranscriptManager {
   // Enable/disable processing
   setEnabled(enabled: boolean): void {
     this.isEnabled = enabled;
-    console.log(`${enabled ? '✅' : '❌'} Transcript processing ${enabled ? 'enabled' : 'disabled'}`);
   }
 
   // Process a batch of transcript chunks (for editor integration)
   async processBatch(texts: string[]): Promise<void> {
     if (!this.isEnabled) return;
     
-    console.log('📦 Processing batch:', texts.length, 'chunks');
     await this.processor.processBatch(texts);
     this.notifyUpdate();
   }
@@ -109,7 +105,6 @@ export class RealtimeTranscriptManager {
 
   // Force reprocess all chunks
   async reprocessAll(): Promise<void> {
-    console.log('🔄 Reprocessing all chunks');
     await this.processor.reprocessAll();
     this.notifyUpdate();
   }
@@ -132,15 +127,6 @@ export class RealtimeTranscriptManager {
 
   private notifyUpdate(): void {
     const state = this.getState();
-    
-    // Log state for debugging
-    console.log('🔄 Transcript state update:', {
-      rawLength: state.rawTranscript.length,
-      processedLength: state.processedTranscript.length,
-      chunks: state.chunks.length,
-      processing: state.isProcessing,
-      stats: state.stats
-    });
 
     // Notify all subscribers
     this.updateCallbacks.forEach(callback => {
@@ -217,6 +203,5 @@ export class RealtimeTranscriptManager {
       clearTimeout(this.debounceTimer);
     }
     this.updateCallbacks = [];
-    console.log('🗑️ RealtimeTranscriptManager destroyed');
   }
 } 

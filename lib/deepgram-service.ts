@@ -37,7 +37,7 @@ export class DeepgramService {
   ) {
     try {
       // Check if user can use the service
-      const { canUse, minutesRemaining } = await this.usageService.canUseService();
+      const { canUse, secondsRemaining } = await this.usageService.canUseService();
       if (!canUse) {
         const error = new Error(`🎯 Free Deepgram minutes used up! ✅ WebSpeech API is still available (free). Switch to WebSpeech to continue transcribing.`);
         onError?.(error);
@@ -68,13 +68,11 @@ export class DeepgramService {
 
       // Set up event listeners
       this.connection.on(LiveTranscriptionEvents.Open, () => {
-        console.log("Deepgram connection opened");
         this.isConnected = true;
         this.onOpenCallback?.();
       });
 
       this.connection.on(LiveTranscriptionEvents.Close, () => {
-        console.log("Deepgram connection closed");
         this.isConnected = false;
         this.recordUsage(); // Record usage when connection closes
         this.onCloseCallback?.();
@@ -84,7 +82,6 @@ export class DeepgramService {
         const transcript = data.channel?.alternatives?.[0]?.transcript;
         if (transcript && transcript.trim()) {
           const isFinal = data.is_final || false;
-          console.log("Deepgram transcript:", transcript, "isFinal:", isFinal);
           this.onTranscriptCallback?.(transcript, isFinal);
         }
       });
@@ -96,7 +93,7 @@ export class DeepgramService {
       });
 
       this.connection.on(LiveTranscriptionEvents.Metadata, (data: any) => {
-        console.log("Deepgram metadata:", data);
+        // Metadata received - removed console.log for cleaner output
       });
 
       // Start capturing audio from microphone
@@ -129,6 +126,7 @@ export class DeepgramService {
       const source = this.audioContext.createMediaStreamSource(this.mediaStream);
       
       // Create a script processor to capture audio data
+      // Note: ScriptProcessorNode is deprecated but AudioWorkletNode isn't widely supported yet
       this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
       
       this.processor.onaudioprocess = (event) => {
@@ -152,7 +150,7 @@ export class DeepgramService {
       source.connect(this.processor);
       this.processor.connect(this.audioContext.destination);
 
-      console.log("Microphone capture started successfully");
+      // Microphone capture started - removed console.log for cleaner output
 
     } catch (error) {
       console.error("Error accessing microphone:", error);
@@ -162,8 +160,6 @@ export class DeepgramService {
 
   stopListening() {
     try {
-      console.log("Stopping Deepgram service...");
-
       // Record usage before stopping
       this.recordUsage();
 
@@ -183,7 +179,6 @@ export class DeepgramService {
       if (this.mediaStream) {
         this.mediaStream.getTracks().forEach(track => {
           track.stop();
-          console.log("Stopped audio track:", track.label);
         });
         this.mediaStream = undefined;
       }
@@ -194,7 +189,6 @@ export class DeepgramService {
       }
 
       this.isConnected = false;
-      console.log("Deepgram service stopped");
     } catch (error) {
       console.error("Error stopping Deepgram:", error);
     }
@@ -206,26 +200,23 @@ export class DeepgramService {
     const sessionEndTime = Date.now();
     const durationMs = sessionEndTime - this.sessionStartTime;
     const durationSeconds = Math.round(durationMs / 1000);
-    const durationMinutes = Math.ceil(durationMs / 60000); // Round up to nearest minute
-
-    console.log(`Session duration: ${durationSeconds} seconds (${durationMs}ms) = ${durationMinutes} minute(s)`);
+    // Calculate actual seconds used instead of rounding up to minutes
+    const actualSecondsUsed = Math.max(1, durationSeconds); // Minimum 1 second
 
     // Only record if session was at least 5 seconds (to avoid accidental clicks)
-    if (durationSeconds >= 5 && durationMinutes > 0) {
+    if (durationSeconds >= 5) {
       try {
         await this.usageService.recordUsage({
           session_id: this.sessionId,
-          minutes_used: durationMinutes,
+          seconds_used: actualSecondsUsed, // Track actual seconds
           voice_agent: 'deepgram',
           model: 'nova-2'
         });
-        console.log(`✅ Recorded ${durationMinutes} minute(s) of Deepgram usage (${durationSeconds}s actual)`);
+        // Usage recorded successfully - removed verbose console.log
         this.usageRecorded = true; // Mark as recorded
       } catch (error) {
         console.error('Error recording usage:', error);
       }
-    } else {
-      console.log(`⏭️ Session too short (${durationSeconds}s), not recording usage`);
     }
 
     // Reset for potential reuse

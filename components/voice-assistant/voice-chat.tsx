@@ -9,6 +9,7 @@ import VoiceAgentSelector, { VoiceAgent } from './voice-agent-selector';
 import { DeepgramService } from '@/lib/deepgram-service';
 import { TranscriptService } from '@/lib/services/transcript-service';
 import { RealtimeTranscriptManager, RealtimeTranscriptState } from '@/lib/services/realtime-transcript-manager';
+import { useAnalytics } from '@/hooks/use-analytics';
 
 // Type declarations for the Web Speech API
 declare global {
@@ -39,6 +40,10 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated }: VoiceChatProps = {}) =
   const [isIntelligentMode, setIsIntelligentMode] = useState(true);
   const [transcriptState, setTranscriptState] = useState<RealtimeTranscriptState | null>(null);
   const [serviceAvailable, setServiceAvailable] = useState(false);
+  
+  // Analytics tracking
+  const analytics = useAnalytics();
+  const [recordingStartTime, setRecordingStartTime] = useState<number | null>(null);
   
   const recognitionRef = useRef<any>(null);
   const deepgramServiceRef = useRef<DeepgramService | null>(null);
@@ -86,6 +91,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated }: VoiceChatProps = {}) =
     try {
       if (!deepgramApiKey) {
         toast("Deepgram API key not configured. Please add NEXT_PUBLIC_DEEPGRAM_API_KEY to your environment variables.");
+        analytics.trackError('deepgram_api_key_missing', 'Deepgram API key not configured');
         return;
       }
 
@@ -96,11 +102,22 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated }: VoiceChatProps = {}) =
         }
         setIsListening(false);
         setIsThinking(true);
+        
+        // Track recording end
+        if (recordingStartTime) {
+          const duration = (Date.now() - recordingStartTime) / 1000;
+          analytics.trackVoiceRecordingEnd(duration, accumulatedTranscript.length, 'deepgram');
+          setRecordingStartTime(null);
+        }
       } else {
         // Start listening
         if (!deepgramServiceRef.current) {
           deepgramServiceRef.current = new DeepgramService(deepgramApiKey);
         }
+
+        // Track recording start
+        analytics.trackVoiceRecordingStart('deepgram', selectedModel);
+        setRecordingStartTime(Date.now());
 
         await deepgramServiceRef.current.startListening(
           (transcriptText: string, isFinal: boolean) => {
@@ -131,11 +148,18 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated }: VoiceChatProps = {}) =
             console.error('Deepgram error:', error);
             setIsListening(false);
             
+            // Track error
+            analytics.trackError('deepgram_transcription_error', error.message || 'Unknown Deepgram error', {
+              voice_agent: 'deepgram',
+              model: selectedModel
+            });
+            
             // Check if it's a usage limit error
             if (error.message && error.message.includes('Free Deepgram minutes used up')) {
               toast("🎯 Free Deepgram minutes used up! ✅ WebSpeech API is still available (free). Switch to WebSpeech to continue.", {
                 duration: 6000,
               });
+              analytics.trackEngagementMilestone('deepgram_limit_reached', 1);
             } else {
               toast("Error with Deepgram transcription. Please try again.");
             }
@@ -155,6 +179,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated }: VoiceChatProps = {}) =
     } catch (error) {
       console.error("Error with Deepgram:", error);
       toast("Failed to start Deepgram transcription. Please check your API key.");
+      analytics.trackError('deepgram_initialization_error', error instanceof Error ? error.message : 'Unknown error');
     }
   };
 
@@ -294,6 +319,8 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated }: VoiceChatProps = {}) =
   // };
 
   const handleVoiceAgentChange = (agent: VoiceAgent) => {
+    const previousAgent = selectedVoiceAgent;
+    
     // Stop current listening if active
     if (isListening) {
       if (selectedVoiceAgent === 'deepgram' && deepgramServiceRef.current) {
@@ -307,23 +334,32 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated }: VoiceChatProps = {}) =
 
     setSelectedVoiceAgent(agent);
     toast(`Switched to ${agent === 'deepgram' ? 'Deepgram Nova 2' : 'WebSpeech API'}`);
+    
+    // Track agent switch
+    analytics.trackVoiceAgentSwitch(previousAgent, agent);
   };
 
   // Toggle intelligent processing mode
   const toggleIntelligentMode = () => {
-    setIsIntelligentMode(!isIntelligentMode);
+    const newMode = !isIntelligentMode;
+    setIsIntelligentMode(newMode);
     if (realtimeManager.current) {
-      realtimeManager.current.setEnabled(!isIntelligentMode);
+      realtimeManager.current.setEnabled(newMode);
     }
     toast(
-      !isIntelligentMode 
+      newMode 
         ? "🧠 AI Processing enabled - Real-time corrections with Grok" 
         : "📝 Basic mode - Raw transcription only"
     );
+    
+    // Track intelligent mode toggle
+    analytics.trackIntelligentModeToggle(newMode);
   };
   
   // Handle saving transcript
   const handleSaveTranscript = async (transcriptContent: string, voiceAgent: VoiceAgent, model: LLMModel): Promise<void> => {
+    const saveStartTime = Date.now();
+    
     try {
       // Use processed transcript if available
       const contentToSave = isIntelligentMode && transcriptState 
@@ -340,6 +376,13 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated }: VoiceChatProps = {}) =
         throw new Error(error);
       }
 
+      // Track successful save
+      const saveTime = (Date.now() - saveStartTime) / 1000;
+      analytics.trackTranscriptSaved(contentToSave.length, saveTime);
+      
+      // Track engagement milestone for first save
+      analytics.trackEngagementMilestone('first_transcript_save', 1);
+
       // Clear the transcript after successful save
       clearTranscript();
       if (onTranscriptSaved) {
@@ -347,6 +390,14 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated }: VoiceChatProps = {}) =
       }
     } catch (error) {
       console.error('Error saving transcript:', error);
+      
+      // Track save error
+      analytics.trackError('transcript_save_error', error instanceof Error ? error.message : 'Unknown save error', {
+        transcript_length: transcriptContent.length,
+        voice_agent: voiceAgent,
+        model: model
+      });
+      
       throw error;
     }
   };
