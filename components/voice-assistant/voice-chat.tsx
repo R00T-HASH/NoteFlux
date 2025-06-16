@@ -433,13 +433,12 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated }: VoiceChatProps = {}) =
             {/* Main content area */}
             <div className="p-4 sm:p-6">
               {/* Center mic button and visualization */}
-              <div className="flex flex-col items-center justify-center">
-                {/* Mic button with pulsing effect - Commented out for now */}
-                {/*
+              <div className="flex flex-col items-center mb-4 sm:mb-6">
+                {/* Mic button with pulsing effect */}
                 <button
                   onClick={toggleListening}
                   className={`mic-button-pro ${isListening ? 'active' : ''} mb-4 sm:mb-6`}
-                  disabled={isProcessing}
+                  aria-label={isListening ? "Stop listening" : "Start listening"}
                   id="voice-mic-button"
                   name="voice-mic-button"
                 >
@@ -449,49 +448,48 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated }: VoiceChatProps = {}) =
                     <Mic className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                   )}
                 </button>
-                */}
 
-                {/* Audio visualization */}
+                {/* Status text */}
+                <div className="text-xs sm:text-sm text-gray-400 mb-3 sm:mb-4 text-center px-2">
+                  {isListening ? (
+                    <div className="flex items-center justify-center">
+                      <div className="pulse-ring mr-2"></div>
+                      <span>
+                        Listening with {selectedVoiceAgent === 'deepgram' ? 'Deepgram Nova 2' : 'WebSpeech'}...
+                      </span>
+                    </div>
+                  ) : isThinking ? (
+                    <div className="flex items-center justify-center">
+                      <span>Processing your input...</span>
+                    </div>
+                  ) : (
+                    <span>
+                      Click to start recording with {selectedVoiceAgent === 'deepgram' ? 'Deepgram Nova 2' : 'WebSpeech'}
+                    </span>
+                  )}
+                </div>
+                
+                {/* Audio visualization - only show when listening */}
                 {isListening && (
-                  <div className="flex items-center justify-center space-x-1 mb-4">
-                    {[...Array(5)].map((_, i) => (
-                      <div
-                        key={i}
-                        className="w-1 bg-blue-400 rounded-full animate-pulse"
-                        style={{
-                          height: `${Math.random() * 20 + 10}px`,
-                          animationDelay: `${i * 0.1}s`,
+                  <div className="audio-visualizer mb-3 sm:mb-4 flex items-end justify-center h-8 sm:h-12 space-x-0.5 sm:space-x-1">
+                    {[...Array(12)].map((_, i) => (
+                      <div 
+                        key={i} 
+                        className={`w-1 sm:w-1.5 rounded-full audio-bar ${
+                          isIntelligentMode 
+                            ? 'bg-purple-500/70' 
+                            : selectedVoiceAgent === 'deepgram' 
+                              ? 'bg-blue-500/70' 
+                              : 'bg-green-500/70'
+                        }`}
+                        style={{ 
+                          animationDelay: `${i * 0.05}s`,
+                          height: `${Math.random() * 20 + 3}px`
                         }}
-                      />
+                      ></div>
                     ))}
                   </div>
                 )}
-
-                {/* Status text */}
-                <div className="text-center mb-4 sm:mb-6">
-                  <p className="text-gray-400 text-sm sm:text-base mb-2">
-                    {isListening
-                      ? isIntelligentMode
-                        ? "🎤 Listening with AI processing..."
-                        : "🎤 Listening..."
-                      : "Click the mic to start recording"}
-                  </p>
-                  
-                  {/* Intelligent mode toggle - Commented out for now */}
-                  {/*
-                  <button
-                    onClick={toggleIntelligentMode}
-                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                      isIntelligentMode
-                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                        : 'bg-gray-700/50 text-gray-400 border border-gray-600/30'
-                    }`}
-                  >
-                    {isIntelligentMode ? <Zap className="h-3 w-3" /> : <ZapOff className="h-3 w-3" />}
-                    {isIntelligentMode ? 'AI Processing ON' : 'AI Processing OFF'}
-                  </button>
-                  */}
-                </div>
               </div>
               
               {/* Transcript component - positioned below mic */}
