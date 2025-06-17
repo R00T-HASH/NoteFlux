@@ -16,6 +16,7 @@ export class UsageService {
       const usageData = {
         ...data,
         user_id: user.user.id,
+        minutes_used: Math.ceil(data.seconds_used / 60),
       };
 
       const { data: usage, error } = await this.supabase
@@ -88,12 +89,18 @@ export class UsageService {
       if (currentUsage) {
         const newTotalSeconds = currentUsage.total_seconds_used + secondsUsed;
         const newRemainingSeconds = Math.max(0, this.FREE_TIER_SECONDS - newTotalSeconds);
+        
+        // Also calculate minutes for easier tracking
+        const newTotalMinutes = Math.ceil(newTotalSeconds / 60);
+        const newRemainingMinutes = Math.floor(newRemainingSeconds / 60);
 
         await this.supabase
           .from('user_usage')
           .update({
             total_seconds_used: newTotalSeconds,
             seconds_remaining: newRemainingSeconds,
+            total_minutes_used: newTotalMinutes,
+            minutes_remaining: newRemainingMinutes,
             updated_at: new Date().toISOString(),
           })
           .eq('user_id', userId);
