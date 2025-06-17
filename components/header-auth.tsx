@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { createClient } from "@/utils/supabase/server";
+import { FeedbackButton } from "./feedback-form";
 
 export default async function AuthButton() {
   // Check if env vars are available at runtime instead of build time
@@ -53,6 +54,7 @@ export default async function AuthButton() {
 
   return user ? (
     <div className="flex items-center gap-4">
+      <FeedbackButton userEmail={user.email} />
       Hello, {user.email}!
       <form action={signOutAction}>
         <Button type="submit" variant={"outline"}>
@@ -62,6 +64,7 @@ export default async function AuthButton() {
     </div>
   ) : (
     <div className="flex gap-2">
+      <FeedbackButton />
       <Button asChild size="sm" variant={"outline"}>
         <Link href="/sign-in">Sign in</Link>
       </Button>

@@ -147,3 +147,42 @@ export const signOutAction = async () => {
   await supabase.auth.signOut();
   return redirect("/sign-in");
 };
+
+export const submitFeedbackAction = async (formData: FormData) => {
+  const name = formData.get("name")?.toString() || "Anonymous"; // Default to Anonymous if no name
+  const email = formData.get("email")?.toString();
+  const type = formData.get("type")?.toString();
+  const message = formData.get("message")?.toString();
+
+  if (!email || !type || !message) {
+    return { error: "Email, feedback type, and message are required" };
+  }
+
+  try {
+    const supabase = await createClient();
+    
+    // Get current user if authenticated
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    // Insert feedback into database
+    const { error } = await supabase
+      .from('feedback')
+      .insert([{ 
+        name, 
+        email, 
+        type, 
+        message,
+        user_id: user?.id || null // Associate with user if logged in
+      }]);
+    
+    if (error) {
+      console.error("Supabase error:", error);
+      return { error: "Failed to submit feedback. Please try again." };
+    }
+
+    return { success: "Thank you for your feedback!" };
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    return { error: "Something went wrong. Please try again." };
+  }
+};
