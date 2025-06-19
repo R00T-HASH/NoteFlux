@@ -25,26 +25,41 @@ import {
   Redo,
   Sun,
   Moon,
-  Mic,
-  MicOff,
-  HelpCircle,
-  Zap,
-  ZapOff
+  Copy,
+  Save,
+  Trash2
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useVoiceCommands } from '@/hooks/use-voice-commands';
 import { toast } from 'sonner';
+import { TranscriptService } from '@/lib/services/transcript-service';
 
 interface TiptapEditorProps {
   content: string;
   onChange: (content: string) => void;
   onTranscriptStream?: (chunks: string[]) => void;
+  transcript?: string; // Current live transcript from voice input
+  isListening?: boolean; // Whether voice input is currently active
+  onVoiceCommand?: (command: string) => void; // Callback for voice commands
+  onSave?: (content: string) => void; // Callback for save action
+  onClear?: () => void; // Callback for clear action
+  enableSaveFeatures?: boolean; // Whether to show save/clear buttons
 }
 
-const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, onTranscriptStream }) => {
+const TiptapEditor: React.FC<TiptapEditorProps> = ({ 
+  content, 
+  onChange, 
+  onTranscriptStream,
+  transcript: externalTranscript,
+  isListening: externalIsListening,
+  onVoiceCommand,
+  onSave,
+  onClear,
+  enableSaveFeatures = false
+}) => {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [showVoiceHelp, setShowVoiceHelp] = useState(false);
   const [isEditorReady, setIsEditorReady] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const transcriptService = new TranscriptService();
 
   const editor = useEditor({
     extensions: [
@@ -76,58 +91,123 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, onTransc
     },
   });
 
-  const {
-    isListening,
-    transcript,
-    isProcessing,
-    streamingProgress,
-    isStreamingMode,
-    toggleListening,
-    toggleStreamingMode,
-    processTranscriptStream,
-    getAvailableCommands,
-    getBufferState,
-    cleanup
-  } = useVoiceCommands({
-    editor,
-    onCommandExecuted: (command) => {
-      // Command executed successfully
-    },
-    enableStreaming: true // Enable streaming by default for fast processing
-  });
+  // Process external transcript for voice commands
+  useEffect(() => {
+    if (externalTranscript && externalTranscript.length > 0 && !externalIsListening && editor) {
+      // When external listening stops and we have transcript, process it for voice commands
+      import('@/components/editor/voice-command-processor').then(({ VoiceCommandProcessor }) => {
+        const processor = new VoiceCommandProcessor();
+        processor.processCommand(externalTranscript, editor).then((commandExecuted) => {
+          if (commandExecuted) {
+            console.log('Voice command executed from homepage mic:', externalTranscript);
+            onVoiceCommand?.(externalTranscript);
+          }
+        }).catch(console.error);
+      }).catch(console.error);
+    }
+  }, [externalTranscript, externalIsListening, editor, onVoiceCommand]);
+
+  // Use external voice state if provided, otherwise use internal
+  const isListening = externalIsListening ?? false;
+  const transcript = externalTranscript ?? '';
+
+  useEffect(() => {
+    if (editor && content !== editor.getHTML()) {
+      editor.commands.setContent(content, false);
+    }
+  }, [content, editor]);
 
   // Log editor state changes
   useEffect(() => {
-    // Editor state tracking for development
-  }, [editor, isEditorReady]);
+    setIsEditorReady(!!editor);
+  }, [editor]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      cleanup();
+      // Cleanup if needed
     };
-  }, [cleanup]);
+  }, []);
 
-  // Function to handle transcript streams from editor route
+  // Function to handle transcript streams from editor route - DISABLED since we only use homepage mic
   const handleTranscriptStream = useCallback(async (chunks: string[]) => {
-    if (chunks && chunks.length > 0) {
-      await processTranscriptStream(chunks);
+    // Disabled - we only use homepage mic for voice commands
+    console.log('Transcript stream disabled - use homepage mic instead');
       onTranscriptStream?.(chunks);
-    }
-  }, [processTranscriptStream, onTranscriptStream]);
+  }, [onTranscriptStream]);
 
   // Expose the transcript stream handler for external use
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      (window as any).handleEditorTranscriptStream = handleTranscriptStream;
+      (window as any).handleTranscriptStream = handleTranscriptStream;
     }
     
     return () => {
       if (typeof window !== 'undefined') {
-        delete (window as any).handleEditorTranscriptStream;
+        delete (window as any).handleTranscriptStream;
       }
     };
   }, [handleTranscriptStream]);
+
+  // Handle saving the content as a transcript
+  const handleSave = async () => {
+    if (!editor || !editor.getText().trim()) {
+      toast.error('No content to save');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const plainText = editor.getText();
+      const htmlContent = editor.getHTML();
+      
+      if (onSave) {
+        // Use custom save callback if provided
+        onSave(htmlContent);
+        toast.success('Transcript saved successfully!');
+      } else {
+        // Default save to transcript service
+        const { data, error } = await transcriptService.saveTranscript({
+          content: htmlContent,
+          title: `Editor Note ${new Date().toLocaleDateString()}`,
+          voice_agent: 'editor',
+          model_used: 'manual'
+        });
+
+        if (error) {
+          throw new Error(error);
+        }
+
+        toast.success('Transcript saved successfully!');
+      }
+    } catch (error) {
+      console.error('Error saving:', error);
+      toast.error('Failed to save content. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Handle clearing the editor content
+  const handleClear = () => {
+    if (!editor) return;
+
+    const hasContent = editor.getText().trim().length > 0;
+    if (hasContent && !confirm('Are you sure you want to clear all content?')) {
+      return;
+    }
+
+    if (onClear) {
+      // Use custom clear callback if provided
+      onClear();
+    } else {
+      // Default clear behavior
+      editor.commands.clearContent();
+      onChange('');
+    }
+    
+    toast.success('Content cleared');
+  };
 
   if (!editor) {
     return null;
@@ -138,100 +218,79 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, onTransc
     isActive = false, 
     children, 
     disabled = false,
-    title
+    title,
+    specialColor
   }: {
     onClick: () => void;
     isActive?: boolean;
     children: React.ReactNode;
     disabled?: boolean;
     title?: string;
+    specialColor?: 'neon-green';
   }) => (
-    <Button
-      variant="ghost"
-      size="sm"
+    <button
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`h-8 w-8 p-0 ${
-        isActive 
-          ? 'bg-purple-600 text-white hover:bg-purple-700' 
-          : isDarkMode
-            ? 'text-gray-400 hover:text-white hover:bg-gray-800/50'
-            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50'
-      }`}
+      className={`
+        px-1.5 py-1 rounded transition-colors text-sm
+        ${specialColor === 'neon-green' 
+          ? 'text-green-400 hover:text-green-300 hover:bg-green-400/10' 
+          : isActive 
+            ? (isDarkMode ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white')
+            : (isDarkMode 
+                ? 'text-gray-300 hover:bg-gray-700 hover:text-white' 
+                : 'text-gray-600 hover:bg-gray-200'
+              )
+        }
+        ${disabled 
+          ? (isDarkMode ? 'opacity-50 cursor-not-allowed' : 'opacity-50 cursor-not-allowed')
+          : 'cursor-pointer'
+        }
+      `}
     >
       {children}
-    </Button>
+    </button>
   );
 
   const VoiceCommandHelp = () => {
-    const commands = getAvailableCommands();
-    const smartPhrases = [
-      'make the title bold',
-      'make the first line a heading',
-      'make everything a bullet list',
-      'make the whole thing a quote',
-      'turn the title into a heading'
-    ];
-    
     return (
-      <div className={`absolute top-12 right-0 z-50 w-96 p-4 rounded-lg border shadow-lg ${
+      <div className={`absolute top-12 left-0 right-0 p-4 border rounded-lg max-h-96 overflow-y-auto z-50 ${
         isDarkMode ? 'bg-gray-900 border-gray-700 text-gray-300' : 'bg-white border-gray-300 text-gray-700'
       }`}>
         <h3 className="font-semibold mb-3 flex items-center gap-2">
-          Voice Commands
-          {isStreamingMode && <span className="text-xs bg-purple-600 text-white px-2 py-1 rounded">⚡ Streaming</span>}
+          Voice Commands (Use Homepage Mic)
         </h3>
         
-        {/* Streaming Mode Info */}
-        {isStreamingMode && (
-          <div className="mb-4 p-3 bg-purple-900/30 border border-purple-600/30 rounded-lg">
-            <h4 className="text-sm font-medium text-purple-400 mb-2 flex items-center gap-1">
-              <Zap className="h-3 w-3" />
-              Grok AI Streaming Mode
+        {/* Info about using homepage mic */}
+        <div className="mb-4 p-3 bg-blue-900/30 border border-blue-600/30 rounded-lg">
+          <h4 className="text-sm font-medium text-blue-400 mb-2 flex items-center gap-1">
+            🎤 Use Homepage Mic
             </h4>
-            <div className="text-xs text-purple-300 space-y-1">
-              <div>• Speak continuously for real-time processing</div>
-              <div>• AI understands context and complex commands</div>
-              <div>• Ultra-low latency with streaming responses</div>
-              <div>• Works with or without text selection</div>
-            </div>
+          <div className="text-xs text-blue-300 space-y-1">
+            <div>• Click the main mic button in center of page</div>
+            <div>• Speak your content + command</div>
+            <div>• Voice commands will format text automatically</div>
           </div>
-        )}
+        </div>
         
-        {/* Regular commands (require text selection) */}
-        <div className="mb-4">
-          <h4 className="text-sm font-medium text-purple-400 mb-2">With Text Selected:</h4>
-          <div className="space-y-2 max-h-32 overflow-y-auto">
-            {commands.slice(0, 5).map((command, index) => (
-              <div key={index} className="text-sm">
-                <div className="font-medium text-purple-400">{command.description}</div>
-                <div className="text-xs opacity-75">
-                  Say: "{command.patterns[0]}"
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Smart commands (work on whole document) */}
+        {/* Quick Examples */}
         <div className="mb-3">
-          <h4 className="text-sm font-medium text-green-400 mb-2">Smart Commands (No Selection Needed):</h4>
+          <h4 className="text-sm font-medium text-yellow-400 mb-2">🎯 Quick Examples:</h4>
           <div className="space-y-1 max-h-32 overflow-y-auto">
-            {smartPhrases.map((phrase, index) => (
-              <div key={index} className="text-xs text-green-300">
-                "{phrase}"
-              </div>
-            ))}
+            <div className="text-xs text-yellow-300">"make this bold"</div>
+            <div className="text-xs text-yellow-300">"create list"</div>
+            <div className="text-xs text-yellow-300">"make this a heading"</div>
+            <div className="text-xs text-yellow-300">"bullet list"</div>
+            <div className="text-xs text-yellow-300">"numbered list"</div>
+            <div className="text-xs text-yellow-300">"task list"</div>
           </div>
         </div>
-
+        
         <div className="pt-3 border-t border-gray-600 text-xs opacity-75">
           <div className="mb-1">🎯 <strong>Smart commands</strong> work on the entire document</div>
           <div className="mb-1">✋ <strong>Regular commands</strong> need text selected first</div>
-          {isStreamingMode && (
-            <div className="text-purple-400">⚡ <strong>Streaming mode</strong> uses Grok AI for advanced processing</div>
-          )}
+          <div className="mb-1">📝 <strong>List commands</strong> convert text to proper lists</div>
         </div>
       </div>
     );
@@ -246,8 +305,8 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, onTransc
   return (
     <div className={`border ${borderColor} rounded-lg ${bgColor} overflow-hidden`}>
       {/* Toolbar */}
-      <div className={`border-b ${borderColor} ${toolbarBg} p-3 relative`}>
-        <div className="flex items-center gap-1 flex-wrap">
+      <div className={`border-b ${borderColor} ${toolbarBg} py-1 px-2 relative`}>
+        <div className="flex items-center gap-1.5 overflow-x-auto">
           {/* Theme Toggle */}
           <ToolbarButton
             onClick={() => setIsDarkMode(!isDarkMode)}
@@ -256,64 +315,7 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, onTransc
             {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </ToolbarButton>
 
-          <div className={`w-px h-6 ${separatorColor} mx-2`} />
-
-          {/* Voice Commands */}
-          {/* 
-          <div className="relative">
-            <ToolbarButton
-              onClick={toggleListening}
-              isActive={isListening}
-              disabled={isProcessing || !isEditorReady || !editor?.isEditable}
-              title={
-                !isEditorReady 
-                  ? "Editor is loading..." 
-                  : isListening 
-                    ? "Stop voice command" 
-                    : isStreamingMode
-                      ? "Start streaming voice (Grok AI)"
-                      : "Start voice command"
-              }
-            >
-              {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-            </ToolbarButton>
-            
-            Voice status indicator
-            {(isListening || isProcessing) && (
-              <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-            )}
-          </div>
-
-          Streaming Mode Toggle
-          <ToolbarButton
-            onClick={toggleStreamingMode}
-            isActive={isStreamingMode}
-            disabled={!isEditorReady || !editor?.isEditable}
-            title={
-              isStreamingMode 
-                ? "Streaming mode ON - Real-time Grok AI processing" 
-                : "Streaming mode OFF - Single commands only"
-            }
-          >
-            {isStreamingMode ? <Zap className="h-4 w-4" /> : <ZapOff className="h-4 w-4" />}
-          </ToolbarButton>
-          */}
-
-          {/* Voice Help Button - Commented out for now */}
-          {/*
-          <ToolbarButton
-            onClick={() => setShowVoiceHelp(!showVoiceHelp)}
-            disabled={!isEditorReady || !editor?.isEditable}
-            title="Voice commands help"
-          >
-            <HelpCircle className="h-4 w-4" />
-          </ToolbarButton>
-
-          Voice Help Popup
-          {showVoiceHelp && <VoiceCommandHelp />}
-
-          <div className={`w-px h-6 ${separatorColor} mx-2`} />
-          */}
+          <div className={`w-px h-4 ${separatorColor} mx-2`} />
 
           {/* Text Formatting */}
           <ToolbarButton
@@ -332,7 +334,7 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, onTransc
             <Italic className="h-4 w-4" />
           </ToolbarButton>
 
-          <div className={`w-px h-6 ${separatorColor} mx-2`} />
+          <div className={`w-px h-4 ${separatorColor} mx-2`} />
 
           {/* Headings */}
           <ToolbarButton
@@ -359,7 +361,7 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, onTransc
             <Heading3 className="h-4 w-4" />
           </ToolbarButton>
 
-          <div className={`w-px h-6 ${separatorColor} mx-2`} />
+          <div className={`w-px h-4 ${separatorColor} mx-2`} />
 
           {/* Lists */}
           <ToolbarButton
@@ -386,7 +388,7 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, onTransc
             <input type="checkbox" className="h-4 w-4" readOnly />
           </ToolbarButton>
 
-          <div className={`w-px h-6 ${separatorColor} mx-2`} />
+          <div className={`w-px h-4 ${separatorColor} mx-2`} />
 
           {/* Quote */}
           <ToolbarButton
@@ -396,8 +398,6 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, onTransc
           >
             <Quote className="h-4 w-4" />
           </ToolbarButton>
-
-          <div className={`w-px h-6 ${separatorColor} mx-2`} />
 
           {/* Text Alignment */}
           <ToolbarButton
@@ -424,7 +424,7 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, onTransc
             <AlignRight className="h-4 w-4" />
           </ToolbarButton>
 
-          <div className={`w-px h-6 ${separatorColor} mx-2`} />
+          <div className={`w-px h-4 ${separatorColor} mx-2`} />
 
           {/* Undo/Redo */}
           <ToolbarButton
@@ -442,59 +442,113 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ content, onChange, onTransc
           >
             <Redo className="h-4 w-4" />
           </ToolbarButton>
-        </div>
 
-        {/* Voice Status and Streaming Indicators - Commented out for now */}
-        {/*
-        {(isListening || transcript || isProcessing || streamingProgress > 0) && (
-          <div className="mt-3 pt-3 border-t border-gray-600">
-            <div className="flex items-center gap-2 text-sm flex-wrap">
-              {isListening && (
-                <div className="flex items-center gap-2 text-blue-400">
-                  <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                  <span>
-                    {isStreamingMode ? "🚀 Streaming with Grok AI..." : "Listening for command..."}
-                  </span>
-                </div>
-              )}
-              {transcript && (
-                <div className="text-gray-400">
-                  <span className="font-medium">Heard:</span> "{transcript}"
-                </div>
-              )}
-              {isProcessing && (
-                <div className="text-yellow-400">
-                  <span>
-                    {isStreamingMode ? "Processing with Grok AI..." : "Processing command..."}
-                  </span>
-                </div>
-              )}
-              {streamingProgress > 0 && streamingProgress < 1 && (
-                <div className="text-green-400">
-                  <span>Stream progress: {Math.round(streamingProgress * 100)}%</span>
-                </div>
-              )}
-            </div>
-            
-            {isStreamingMode && (
-              <div className="mt-2 text-xs text-purple-400">
-                <span className="font-medium">⚡ Streaming Mode:</span> Real-time processing with Grok API
-                {isListening && (
-                  <span className="ml-2 text-gray-500">
-                    • Speak continuously for instant formatting
-                  </span>
-                )}
-              </div>
-            )}
-            
-            {process.env.NODE_ENV === 'development' && getBufferState && (
-              <div className="mt-2 text-xs text-gray-500 font-mono">
-                <div>Buffer: {getBufferState().buffer || 'empty'} | Queue: {getBufferState().queueLength} | Processing: {getBufferState().isProcessing ? 'yes' : 'no'}</div>
-              </div>
-            )}
-          </div>
-        )}
-        */}
+          <div className={`w-px h-4 ${separatorColor} mx-2`} />
+
+          {/* Copy Button */}
+          <ToolbarButton
+            onClick={() => {
+              // Get the HTML content and convert to clean text while preserving structure
+              const htmlContent = editor.getHTML();
+              
+              // Create a temporary div to parse HTML and extract text with formatting
+              const tempDiv = document.createElement('div');
+              tempDiv.innerHTML = htmlContent;
+              
+              // Function to extract text while preserving structure
+              const extractFormattedText = (element: Element): string => {
+                let result = '';
+                
+                for (const node of Array.from(element.childNodes)) {
+                  if (node.nodeType === Node.TEXT_NODE) {
+                    result += node.textContent || '';
+                  } else if (node.nodeType === Node.ELEMENT_NODE) {
+                    const elem = node as Element;
+                    const tagName = elem.tagName.toLowerCase();
+                    
+                    switch (tagName) {
+                      case 'p':
+                        const pText = extractFormattedText(elem).trim();
+                        if (pText) result += pText + '\n\n';
+                        break;
+                      case 'h1':
+                      case 'h2':
+                      case 'h3':
+                      case 'h4':
+                      case 'h5':
+                      case 'h6':
+                        const hText = extractFormattedText(elem).trim();
+                        if (hText) result += hText + '\n\n';
+                        break;
+                      case 'ul':
+                        for (const li of Array.from(elem.querySelectorAll('li'))) {
+                          const liText = extractFormattedText(li).trim();
+                          if (liText) result += '• ' + liText + '\n';
+                        }
+                        result += '\n';
+                        break;
+                      case 'ol':
+                        const lis = Array.from(elem.querySelectorAll('li'));
+                        lis.forEach((li, index) => {
+                          const liText = extractFormattedText(li).trim();
+                          if (liText) result += `${index + 1}. ${liText}\n`;
+                        });
+                        result += '\n';
+                        break;
+                      case 'blockquote':
+                        const qText = extractFormattedText(elem).trim();
+                        if (qText) result += '> ' + qText + '\n\n';
+                        break;
+                      case 'br':
+                        result += '\n';
+                        break;
+                      default:
+                        result += extractFormattedText(elem);
+                        break;
+                    }
+                  }
+                }
+                
+                return result;
+              };
+              
+              const formattedText = extractFormattedText(tempDiv)
+                .replace(/\n{3,}/g, '\n\n') // Clean up excessive line breaks
+                .trim();
+              
+              navigator.clipboard.writeText(formattedText);
+              toast.success('Text copied to clipboard');
+            }}
+            disabled={!editor.isEditable || !editor.getText().trim()}
+            title="Copy corrected text"
+          >
+            <Copy className="h-4 w-4" />
+          </ToolbarButton>
+
+          {/* Save and Clear buttons - show if enableSaveFeatures is true */}
+          {enableSaveFeatures && (
+            <>
+              {/* Save Button */}
+              <ToolbarButton
+                onClick={handleSave}
+                disabled={!editor.isEditable || !editor.getText().trim() || isSaving}
+                title={isSaving ? "Saving..." : "Save as transcript"}
+                specialColor="neon-green"
+              >
+                <Save className="h-4 w-4" />
+              </ToolbarButton>
+
+              {/* Clear Button */}
+              <ToolbarButton
+                onClick={handleClear}
+                disabled={!editor.isEditable}
+                title="Clear all content"
+              >
+                <Trash2 className="h-4 w-4" />
+              </ToolbarButton>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Editor Content */}

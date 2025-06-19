@@ -10,6 +10,7 @@ import { DeepgramService } from '@/lib/deepgram-service';
 import { TranscriptService } from '@/lib/services/transcript-service';
 import { RealtimeTranscriptManager, RealtimeTranscriptState } from '@/lib/services/realtime-transcript-manager';
 import { useAnalytics } from '@/hooks/use-analytics';
+import TiptapEditor from '@/components/editor/tiptap-editor';
 
 // Type declarations for the Web Speech API
 declare global {
@@ -24,9 +25,10 @@ export type LLMModel = 'gpt-4o-mini' | 'gpt-4o' | 'gpt-4.5-preview';
 type VoiceChatProps = {
   onTranscriptSaved?: () => void;
   onUsageUpdated?: () => void;
+  onTranscriptUpdate?: (transcript: string) => void;
 };
 
-const VoiceChat = ({ onTranscriptSaved, onUsageUpdated }: VoiceChatProps = {}) => {
+const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: VoiceChatProps = {}) => {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [isThinking, setIsThinking] = useState(false);
@@ -44,6 +46,9 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated }: VoiceChatProps = {}) =
   // Analytics tracking
   const analytics = useAnalytics();
   const [recordingStartTime, setRecordingStartTime] = useState<number | null>(null);
+  
+  // Editor state
+  const [editorContent, setEditorContent] = useState("");
   
   const recognitionRef = useRef<any>(null);
   const deepgramServiceRef = useRef<DeepgramService | null>(null);
@@ -64,6 +69,9 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated }: VoiceChatProps = {}) =
       setTranscriptState(state);
       setAccumulatedTranscript(state.processedTranscript);
       setIsProcessing(state.isProcessing);
+      if (onTranscriptUpdate) {
+        onTranscriptUpdate(state.processedTranscript);
+      }
     });
 
     // Check service availability
@@ -410,13 +418,21 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated }: VoiceChatProps = {}) =
     return accumulatedTranscript;
   };
 
+  const handleEditorChange = (content: string) => {
+    setEditorContent(content);
+    // Sync with transcript updates if needed
+    if (onTranscriptUpdate) {
+      onTranscriptUpdate(content);
+    }
+  };
+
   return (
-    <div className="fixed inset-x-0 bottom-4 sm:bottom-16 flex justify-center z-50 pointer-events-none">
-      <div className="floating-container relative min-h-[400px] sm:min-h-[500px] w-full max-w-sm sm:max-w-2xl pointer-events-auto">
-        <div className="neo-blur rounded-xl border border-green-500 shadow-xl w-full mx-2 sm:mx-4 transition-all duration-300 ease-in-out overflow-hidden color-changing-border">
-          <div className="flex flex-col">
+    <div className="fixed inset-x-0 top-16 bottom-0 flex items-center justify-center z-50 pointer-events-none p-4">
+      <div className="floating-container relative w-full max-w-4xl h-full max-h-[75vh] pointer-events-auto">
+        <div className="neo-blur rounded-xl border border-green-500 shadow-xl w-full h-full transition-all duration-300 ease-in-out overflow-hidden color-changing-border">
+          <div className="flex flex-col h-full">
             {/* Header with selectors */}
-            <div className="flex items-center justify-between p-3 sm:p-4 border-b border-gray-700/30">
+            <div className="flex items-center justify-between p-3 sm:p-4 border-b border-gray-700/30 flex-shrink-0">
               <h3 className="text-sm font-medium text-gray-300">Noteflux</h3>
               <div className="flex items-center gap-2 sm:gap-3">
                 <VoiceAgentSelector 
@@ -431,9 +447,9 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated }: VoiceChatProps = {}) =
             </div>
             
             {/* Main content area */}
-            <div className="p-4 sm:p-6">
+            <div className="flex-1 flex flex-col p-4 sm:p-6 overflow-hidden">
               {/* Center mic button and visualization */}
-              <div className="flex flex-col items-center mb-4 sm:mb-6">
+              <div className="flex flex-col items-center mb-4 sm:mb-6 flex-shrink-0">
                 {/* Mic button with pulsing effect */}
                 <button
                   onClick={toggleListening}
@@ -464,7 +480,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated }: VoiceChatProps = {}) =
                     </div>
                   ) : (
                     <span>
-                      Click to start recording with {selectedVoiceAgent === 'deepgram' ? 'Deepgram Nova 2' : 'WebSpeech'}
+                      Tap the mic and start speaking
                     </span>
                   )}
                 </div>
@@ -492,19 +508,28 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated }: VoiceChatProps = {}) =
                 )}
               </div>
               
-              {/* Transcript component - positioned below mic */}
-              <VoiceTranscript 
-                transcript={transcript} 
-                accumulatedTranscript={getDisplayTranscript()}
-                isThinking={isThinking || (isIntelligentMode && isProcessing)} 
-                onClear={clearTranscript}
-                onSave={handleSaveTranscript}
-                show={true}
-                selectedModel={selectedModel}
-                selectedVoiceAgent={selectedVoiceAgent}
-                isIntelligentMode={isIntelligentMode}
-                transcriptState={transcriptState}
-              />
+              {/* Tiptap Editor - positioned below mic */}
+              <div className="flex-1 overflow-hidden">
+                <TiptapEditor
+                  content={getDisplayTranscript()}
+                  onChange={handleEditorChange}
+                  transcript={transcript}
+                  isListening={isListening}
+                  onVoiceCommand={(command) => {
+                    console.log('Voice command received:', command);
+                  }}
+                  enableSaveFeatures={true}
+                  onSave={async (content: string) => {
+                    // Save the corrected transcript content
+                    await handleSaveTranscript(content, selectedVoiceAgent, selectedModel);
+                  }}
+                  onClear={() => {
+                    // Clear the transcript and editor
+                    clearTranscript();
+                    setEditorContent('');
+                  }}
+                />
+              </div>
             </div>
           </div>
         </div>

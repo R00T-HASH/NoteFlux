@@ -46,15 +46,34 @@ export class IntelligentTranscriptProcessor {
 
     // Only add non-empty chunks
     if (chunk.text) {
+      // Remove any previous interim chunks if this is a final chunk
+      // This prevents duplicate processing during pauses
+      if (isFinal) {
+        this.chunks = this.chunks.filter(c => c.isFinal || c.corrected);
+      }
+      
       this.chunks.push(chunk);
       
-      // Process the chunk if it's final or significant enough
-      if (isFinal || chunk.text.length > 10) {
+      // Only process final chunks or significant interim chunks
+      // This reduces unnecessary processing during pauses
+      if (isFinal || (chunk.text.length > 15 && !this.hasRecentCorrection())) {
         this.processChunk(chunkId);
       }
     }
 
     return chunkId;
+  }
+
+  // Check if we have a recent correction (within last 2 seconds)
+  // This helps prevent overprocessing during pauses
+  private hasRecentCorrection(): boolean {
+    const recentThreshold = 2000; // 2 seconds
+    const now = Date.now();
+    
+    return this.chunks.some(chunk => 
+      chunk.corrected && 
+      (now - chunk.timestamp) < recentThreshold
+    );
   }
 
   // Process a specific chunk with AI correction
@@ -117,28 +136,38 @@ export class IntelligentTranscriptProcessor {
 
   // Get the current processed transcript
   getProcessedTranscript(): string {
-    // Build a clean, deduplicated transcript
-    const processedChunks = this.chunks.filter(chunk => chunk.corrected || !chunk.isProcessing);
-    
-    if (processedChunks.length === 0) {
+    // If no chunks, return empty
+    if (this.chunks.length === 0) {
       return '';
     }
 
-    // If we have corrected chunks, use the latest corrected version as the final result
-    const latestCorrected = processedChunks
-      .filter(chunk => chunk.corrected)
-      .pop(); // Get the most recent corrected chunk
-
-    if (latestCorrected && latestCorrected.corrected) {
-      // Return the latest AI-corrected version which should contain the full context
-      return latestCorrected.corrected;
+    // Find the most recent chunk that has been corrected
+    const correctedChunks = this.chunks.filter(chunk => chunk.corrected && chunk.corrected.trim());
+    
+    if (correctedChunks.length === 0) {
+      // No corrections yet, return raw text of final chunks only
+      // Ignore interim chunks during pauses
+      const finalChunks = this.chunks.filter(chunk => chunk.isFinal && !chunk.isProcessing);
+      if (finalChunks.length > 0) {
+        const result = finalChunks.map(chunk => chunk.text).join(' ').trim();
+        return result;
+      }
+      
+      // If no final chunks, return latest non-processing chunk
+      const nonProcessingChunks = this.chunks.filter(chunk => !chunk.isProcessing);
+      const result = nonProcessingChunks.length > 0 
+        ? nonProcessingChunks[nonProcessingChunks.length - 1].text 
+        : '';
+      return result;
     }
 
-    // Fallback: combine uncorrected chunks (but this should rarely happen)
-    return processedChunks
-      .map(chunk => chunk.text)
-      .join(' ')
-      .trim();
+    // Get the latest corrected chunk - this should contain the full corrected context
+    const latestCorrected = correctedChunks[correctedChunks.length - 1];
+    
+    // The AI is designed to return the complete corrected text including context,
+    // so we should use the latest corrected version as the full transcript
+    const result = latestCorrected.corrected || '';
+    return result;
   }
 
   // Get the raw transcript (without corrections)

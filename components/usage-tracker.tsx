@@ -66,8 +66,8 @@ const UsageTracker = forwardRef<UsageTrackerRef, UsageTrackerProps>(({ className
     <div className={`rounded-lg p-4 ${className}`} style={{ border: 'none' }}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <Clock className="h-4 w-4 text-blue-400" />
-          <span className="text-sm font-medium text-gray-300">Deepgram Usage</span>
+          {/* <Clock className="h-4 w-4 text-blue-400" />
+          <span className="text-sm font-medium text-gray-300">Deepgram Usage</span> */}
         </div>
         <Zap className="h-4 w-4 text-yellow-400" />
       </div>

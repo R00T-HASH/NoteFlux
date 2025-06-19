@@ -17,6 +17,7 @@ export default function Home() {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [sessionStartTime] = useState(Date.now());
   const analytics = useAnalytics();
+  const [correctedTranscript, setCorrectedTranscript] = useState("");
 
   useEffect(() => {
     // Track session start and page visit
@@ -49,6 +50,10 @@ export default function Home() {
     analytics.trackFeatureUsed('usage_tracker_updated');
   };
 
+  const handleTranscriptUpdate = (transcript: string) => {
+    setCorrectedTranscript(transcript);
+  };
+
   return (
     <main className="flex min-h-screen">
       <Sidebar ref={sidebarRef} isOpen={isSidebarOpen} onToggle={handleSidebarToggle} />
@@ -58,13 +63,11 @@ export default function Home() {
           <UsageTracker ref={usageTrackerRef} />
         </div>
         
-        {/* <div className="text-center">
-          <h1 className="text-5xl font-bold text-white mb-4">NoteFlux</h1>
-          <p className="text-lg text-gray-400">Your AI-powered note-taking companion</p>
-        </div> */}
-        
-        <DynamicVoiceChat onUsageUpdated={handleUsageUpdated} />
-
+        {/* Voice Chat Modal with integrated Tiptap Editor */}
+        <DynamicVoiceChat 
+          onUsageUpdated={handleUsageUpdated} 
+          onTranscriptUpdate={handleTranscriptUpdate}
+        />
       </div>
     </main>
   );

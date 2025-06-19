@@ -18,97 +18,128 @@ export interface StreamingChunk {
 
 export class VoiceCommandProcessor {
   private commands: VoiceCommand[] = [
-    // Bold commands
+    // Bold commands - enhanced patterns
     {
-      patterns: ['make this bold', 'bold this', 'make bold', 'bold'],
+      patterns: ['make this bold', 'bold this', 'make bold', 'bold', 'make it bold', 'bold text', 'make that bold'],
       action: (editor) => editor.chain().focus().toggleBold().run(),
       description: 'Make selected text bold',
       requiresSelection: true
     },
     
-    // Italic commands
+    // Italic commands - enhanced patterns
     {
-      patterns: ['make this italic', 'italic this', 'make italic', 'italic', 'italicize this'],
+      patterns: ['make this italic', 'italic this', 'make italic', 'italic', 'italicize this', 'make it italic', 'italic text'],
       action: (editor) => editor.chain().focus().toggleItalic().run(),
       description: 'Make selected text italic',
       requiresSelection: true
     },
     
-    // Heading commands
+    // Heading commands - enhanced patterns
     {
-      patterns: ['heading one', 'heading 1', 'make heading one', 'h1'],
+      patterns: ['heading one', 'heading 1', 'make heading one', 'h1', 'title', 'main heading', 'big heading'],
       action: (editor) => editor.chain().focus().toggleHeading({ level: 1 }).run(),
       description: 'Convert to heading 1',
       requiresSelection: true
     },
     {
-      patterns: ['heading two', 'heading 2', 'make heading two', 'h2'],
+      patterns: ['heading two', 'heading 2', 'make heading two', 'h2', 'subtitle', 'subheading'],
       action: (editor) => editor.chain().focus().toggleHeading({ level: 2 }).run(),
       description: 'Convert to heading 2',
       requiresSelection: true
     },
     {
-      patterns: ['heading three', 'heading 3', 'make heading three', 'h3'],
+      patterns: ['heading three', 'heading 3', 'make heading three', 'h3', 'small heading'],
       action: (editor) => editor.chain().focus().toggleHeading({ level: 3 }).run(),
       description: 'Convert to heading 3',
       requiresSelection: true
     },
     
-    // List commands
+    // List commands - significantly enhanced
     {
-      patterns: ['bullet list', 'bullet points', 'make bullet list', 'bulleted list'],
+      patterns: [
+        'bullet list', 'bullet points', 'make bullet list', 'bulleted list', 'unordered list',
+        'create list', 'make list', 'bullet', 'bullets', 'list items', 'itemize',
+        'make this a list', 'convert to list', 'list format', 'bullet format'
+      ],
       action: (editor) => editor.chain().focus().toggleBulletList().run(),
       description: 'Create bullet list',
       requiresSelection: true
     },
     {
-      patterns: ['numbered list', 'number list', 'ordered list', 'make numbered list'],
+      patterns: [
+        'numbered list', 'number list', 'ordered list', 'make numbered list', 'numbered',
+        'numbered points', 'number these', 'sequence', 'ordered points', 'numbered items',
+        'make numbered', 'number format', 'sequential list'
+      ],
       action: (editor) => editor.chain().focus().toggleOrderedList().run(),
       description: 'Create numbered list',
       requiresSelection: true
     },
     
-    // Quote commands
+    // Quote commands - enhanced
     {
-      patterns: ['make quote', 'quote this', 'block quote', 'make this a quote'],
+      patterns: ['make quote', 'quote this', 'block quote', 'make this a quote', 'quotation', 'quote format', 'citation'],
       action: (editor) => editor.chain().focus().toggleBlockquote().run(),
       description: 'Convert to quote',
       requiresSelection: true
     },
     
-    // Alignment commands
+    // Alignment commands - enhanced
     {
-      patterns: ['center this', 'center align', 'align center'],
+      patterns: ['center this', 'center align', 'align center', 'center text', 'make center'],
       action: (editor) => editor.chain().focus().setTextAlign('center').run(),
       description: 'Center align text',
       requiresSelection: true
     },
     {
-      patterns: ['left align', 'align left'],
+      patterns: ['left align', 'align left', 'left text', 'make left'],
       action: (editor) => editor.chain().focus().setTextAlign('left').run(),
       description: 'Left align text',
       requiresSelection: true
     },
     {
-      patterns: ['right align', 'align right'],
+      patterns: ['right align', 'align right', 'right text', 'make right'],
       action: (editor) => editor.chain().focus().setTextAlign('right').run(),
       description: 'Right align text',
       requiresSelection: true
     },
     
-    // Paragraph commands
+    // Paragraph commands - enhanced
     {
-      patterns: ['normal text', 'make paragraph', 'regular text', 'paragraph'],
+      patterns: ['normal text', 'make paragraph', 'regular text', 'paragraph', 'plain text', 'remove formatting'],
       action: (editor) => editor.chain().focus().setParagraph().run(),
       description: 'Convert to normal paragraph',
       requiresSelection: true
     },
     
-    // Task list commands
+    // Task list commands - enhanced
     {
-      patterns: ['task list', 'todo list', 'checklist', 'make checklist'],
+      patterns: [
+        'task list', 'todo list', 'checklist', 'make checklist', 'to do', 'tasks',
+        'checkbox list', 'check list', 'action items', 'todo items', 'make tasks',
+        'task format', 'checkbox format', 'checkable list'
+      ],
       action: (editor) => editor.chain().focus().toggleTaskList().run(),
       description: 'Create task list',
+      requiresSelection: true
+    },
+
+    // Additional formatting commands
+    {
+      patterns: ['underline', 'underline this', 'make underline', 'underlined'],
+      action: (editor) => {
+        // TipTap doesn't have built-in underline, use custom HTML mark or skip
+        editor.chain().focus().run();
+      },
+      description: 'Make text underlined',
+      requiresSelection: true
+    },
+
+    // Clear formatting
+    {
+      patterns: ['clear formatting', 'remove formatting', 'plain text', 'no formatting', 'reset format'],
+      action: (editor) => editor.chain().focus().clearNodes().unsetAllMarks().run(),
+      description: 'Clear all formatting',
       requiresSelection: true
     }
   ];
@@ -170,27 +201,33 @@ export class VoiceCommandProcessor {
   }
 
   private containsCommandKeywords(text: string): boolean {
-    const commandKeywords = [
-      // Basic formatting
-      'make', 'bold', 'italic', 'heading', 'list', 'quote', 'center', 'align', 
-      'bullet', 'numbered', 'task', 'paragraph', 'normal',
+    const keywords = [
+      // Formatting keywords
+      'bold', 'italic', 'heading', 'quote', 'center', 'align', 'underline',
       
-      // Action words
-      'turn', 'convert', 'format', 'change', 'transform',
+      // List keywords - significantly enhanced
+      'list', 'bullet', 'bullets', 'numbered', 'number', 'items', 'item',
+      'points', 'checklist', 'todo', 'task', 'tasks', 'checkbox',
+      'itemize', 'organize', 'sequence', 'ordered', 'unordered',
       
-      // Targets
-      'title', 'first', 'everything', 'all', 'whole', 'document',
-      'line', 'paragraph', 'text', 'introduction', 'conclusion',
+      // Action words for lists
+      'create', 'make', 'convert', 'turn', 'format', 'change',
       
-      // Natural language
-      'want', 'please', 'can', 'should', 'need',
+      // Specific list phrases
+      'bullet list', 'bullet points', 'numbered list', 'task list',
+      'todo list', 'check list', 'action items',
       
-      // Specific commands
-      'h1', 'h2', 'h3', 'checklist', 'todo'
+      // General formatting
+      'paragraph', 'normal', 'clear', 'remove', 'formatting'
     ];
     
     const lowerText = text.toLowerCase();
-    return commandKeywords.some(keyword => lowerText.includes(keyword));
+    return keywords.some(keyword => lowerText.includes(keyword)) || 
+           lowerText.includes('make this') || 
+           lowerText.includes('make it') ||
+           lowerText.includes('convert to') ||
+           lowerText.includes('turn into') ||
+           lowerText.includes('change to');
   }
 
   private async processBufferedStream(editor: Editor): Promise<boolean> {
@@ -308,25 +345,66 @@ export class VoiceCommandProcessor {
         messages: [
           {
             role: 'system',
-            content: `Ultra-fast voice command processor. Return ONLY updated HTML.
+            content: `Ultra-fast voice command processor for TipTap rich text editing. Return ONLY properly formatted HTML.
 
-RULES:
+FORMATTING RULES - APPLY DIRECTLY:
 - Bold: <strong>text</strong>
 - Italic: <em>text</em>
+- Underline: <u>text</u>
 - H1: <h1>text</h1>, H2: <h2>text</h2>, H3: <h3>text</h3>
-- Bullet: <ul><li>item</li></ul>
-- Numbered: <ol><li>item</li></ol>
+- Bullet list: <ul><li>item 1</li><li>item 2</li></ul>
+- Numbered list: <ol><li>item 1</li><li>item 2</li></ol>
 - Quote: <blockquote><p>text</p></blockquote>
-- Center: <p style="text-align: center">text</p>
-- Task: <ul data-type="taskList"><li data-type="taskItem" data-checked="false">task</li></ul>
+- Center align: <p style="text-align: center">text</p>
+- Task list: <ul data-type="taskList"><li data-type="taskItem" data-checked="false">task</li></ul>
 
-SMART COMMANDS:
-- "make everything bold" → wrap ALL in <strong>
-- "make title bold" → wrap first heading in <strong>
-- "bullet list" → convert paragraphs to <ul><li>
-- "heading" → convert to <h1>, <h2>, or <h3>
+CONTEXT AWARENESS - CRITICAL:
+When users provide an introduction followed by enumerated points, format the POINTS as lists, preserve the introduction.
+- Look for patterns: "here are my X", "top 5", "these are", "steps to", etc.
+- Identify enumeration: "first", "second", "one", "two", "number one", "next", etc.
+- Keep introduction as paragraph, convert enumerated items to list items
 
-RESPONSE: HTML only, no explanations.`
+SMART COMMANDS (work on entire document):
+- "make everything bold" → wrap ALL content in <strong>
+- "make title bold" → wrap first heading/line in <strong>
+- "make this a bullet list" → convert paragraphs to <ul><li>items</li></ul>
+- "create list" / "make list" → convert content to bullet list format
+- "numbered list" → convert content to <ol><li>items</li></ol>
+- "make heading" → convert first line to <h1>, <h2>, or <h3>
+- "task list" / "checklist" → convert to task list format
+
+CONTEXT EXAMPLES:
+Input: "I'm a software engineer here are my top 5 learnings debugging testing code review documentation teamwork" + Command: "put in list"
+Output: <p>I'm a software engineer, here are my top 5 learnings:</p><ul><li>debugging</li><li>testing</li><li>code review</li><li>documentation</li><li>teamwork</li></ul>
+
+Input: "These are project tasks clean database update API fix bugs deploy" + Command: "bullet list"  
+Output: <p>These are project tasks:</p><ul><li>clean database</li><li>update API</li><li>fix bugs</li><li>deploy</li></ul>
+
+Input: "Steps to deploy first build app second run tests third check staging fourth deploy production" + Command: "numbered list"
+Output: <p>Steps to deploy:</p><ol><li>build app</li><li>run tests</li><li>check staging</li><li>deploy production</li></ol>
+
+LIST CREATION INTELLIGENCE:
+- When user says "create list", "make list", "bullet list", convert text to proper list format
+- Split content by periods, commas, line breaks, enumeration words, or natural separators
+- Each item becomes a separate <li> element
+- Preserve logical grouping and structure
+- Handle natural speech patterns and filler words
+
+SIMPLE EXAMPLES:
+Input: "buy milk, get groceries, call mom" + Command: "make this a list"
+Output: <ul><li>buy milk</li><li>get groceries</li><li>call mom</li></ul>
+
+Input: "First item. Second item. Third item." + Command: "bullet list"
+Output: <ul><li>First item</li><li>Second item</li><li>Third item</li></ul>
+
+CONTEXT AWARENESS:
+- Understand user intent from voice commands
+- Handle variations like "items", "bullet points", "numbered", "checklist"
+- Preserve important content while applying formatting
+- Be smart about splitting text into logical list items
+- Distinguish between introductory text and content to be formatted
+
+RESPONSE: Return ONLY the updated HTML, no explanations or markdown.`
           },
           {
             role: 'user',
