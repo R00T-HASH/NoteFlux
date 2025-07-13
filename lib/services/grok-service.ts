@@ -1,3 +1,4 @@
+
 export interface CorrectionResult {
   correctedText: string;
   confidence: number;
@@ -112,7 +113,12 @@ export class GrokService {
   private buildCorrectionPrompt(text: string, context: string[]): string {
     const contextStr = context.length > 0 ? context.join(' ') : '';
     
-    return `You are an intelligent transcript processor and TipTap editor assistant. Your job is to:
+    // Detect if this is a formatting command or continuous speech
+    const isFormattingCommand = /\b(make|create|bold|italic|heading|list|bullet|numbered|quote|center|align|put in|convert to|turn into|change to)\b/i.test(text);
+    
+    if (isFormattingCommand) {
+      // Full formatting prompt for commands
+      return `You are an intelligent transcript processor and TipTap editor assistant. Your job is to:
 
 1. Fix speech-to-text errors and typos
 2. Understand user corrections and intent (CRITICAL: when user says "make that X" or "change to X", they want to REPLACE the previous value, not add to it)
@@ -121,35 +127,46 @@ export class GrokService {
 5. Improve grammar and punctuation  
 6. Format properly (capitalization, spacing)
 7. Return properly formatted HTML that TipTap can render
+8. NEVER add unnecessary quotes around text unless they were explicitly spoken as quotes
+9. REMOVE the command itself from the output (e.g., "create a list" should not appear in final output)
+10. AUTO-DETECT and FORMAT lists when items are separated by commas or "and"
 
 ${contextStr ? `Previous context: "${contextStr}"` : ''}
 Current speech: "${text}"
 
-CRITICAL RULES:
-- When user corrects themselves ("make that 75", "change to 75", "actually 75"), REPLACE the previous number/value in the context
-- If user says "make that seventy five" after saying "twenty five", the final result should have "75" NOT both numbers
-- When user says editing commands, APPLY THE FORMATTING IMMEDIATELY using proper HTML
-- CONTEXT AWARENESS: If user provides an introduction followed by points/items, format the POINTS/ITEMS, not the introduction
-- For list commands: convert content to actual HTML lists using <ul><li> or <ol><li> syntax
-- For formatting commands: wrap content in proper HTML tags like <strong>, <em>, <h1>, etc.
-- Split content intelligently into list items when creating lists
-- Remove duplications and repetitions
-- Fix obvious speech-to-text errors
-- Handle verbal punctuation ("comma", "period", "question mark")
-- Format numbers, emails, dates properly
+CRITICAL RULES FOR COMMAND PROCESSING:
+- REMOVE the formatting command from the final output
+- For list commands, wait for list items to be spoken before creating the list
+- If only the command is spoken (e.g., just "create a list"), return the existing content without the command
+- Extract actual content items and format them properly
+- NEVER add quotes around regular text unless they were explicitly spoken as quotes
+- AUTO-DETECT LISTS: If text contains comma-separated items, format as HTML list automatically
+
+FORMATTING BEHAVIOR:
+- "create list" → REMOVE this command, wait for items
+- "make this bold [content]" → Format only the content part as <strong>content</strong>
+- "make heading [content]" → Format only the content part as <h2>content</h2>
+- "bullet list item one item two" → <ul><li>item one</li><li>item two</li></ul>
+- "buy groceries, schedule meeting" → <ul><li>buy groceries</li><li>schedule meeting</li></ul>
 
 CONTEXT UNDERSTANDING EXAMPLES:
-Input: "I'm a software engineer here are my top 5 learnings first one debugging second one testing third one code review fourth one documentation fifth one teamwork" + Command: "put in list"
-Output: <p>I'm a software engineer, here are my top 5 learnings:</p><ol><li>debugging</li><li>testing</li><li>code review</li><li>documentation</li><li>teamwork</li></ol>
+Input: Context: "I'm working on a project." + Current: "create a list buy groceries schedule meeting"
+Output: I'm working on a project.
 
-Input: "These are my project tasks clean the database update the API fix the bugs deploy to production" + Command: "make this a list"
-Output: <p>These are my project tasks:</p><ul><li>clean the database</li><li>update the API</li><li>fix the bugs</li><li>deploy to production</li></ul>
+<ul><li>buy groceries</li><li>schedule meeting</li></ul>
 
-Input: "Meeting agenda discussion one project status discussion two budget review discussion three timeline planning" + Command: "bullet list"
-Output: <p>Meeting agenda:</p><ul><li>project status</li><li>budget review</li><li>timeline planning</li></ul>
+Input: Context: "Meeting notes from today." + Current: "create a list"
+Output: Meeting notes from today.
 
-Input: "Here are the steps to deploy first build the app second run tests third check staging fourth deploy to production" + Command: "numbered list"
-Output: <p>Here are the steps to deploy:</p><ol><li>build the app</li><li>run tests</li><li>check staging</li><li>deploy to production</li></ol>
+Input: Context: "Project status update." + Current: "make this bold important deadline"
+Output: Project status update.
+
+<strong>important deadline</strong>
+
+Input: Context: "Do you ever realize how much time you waste just typing and fixing typos? Fixing typos and formatting the text? Therefore I built Node Flux." + Current: "buy groceries, Schedule a meeting."
+Output: Do you ever realize how much time you waste just typing and fixing typos? Fixing typos and formatting the text? Therefore I built Node Flux.
+
+<ul><li>buy groceries</li><li>schedule a meeting</li></ul>
 
 TIPTAP HTML FORMATTING RULES:
 - Bold: <strong>text</strong>
@@ -160,30 +177,102 @@ TIPTAP HTML FORMATTING RULES:
 - Numbered list: <ol><li>item 1</li><li>item 2</li><li>item 3</li></ol>
 - Task list: <ul data-type="taskList"><li data-type="taskItem" data-checked="false">item 1</li><li data-type="taskItem" data-checked="false">item 2</li></ul>
 - Quote: <blockquote><p>text</p></blockquote>
-- Paragraph: <p>text</p>
 
-PATTERN RECOGNITION FOR LISTS:
-- Look for enumeration words: "first", "second", "third", "one", "two", "three", "number one", etc.
-- Look for sequence indicators: "next", "then", "also", "another", "finally"
-- Look for list introduction phrases: "here are", "top X", "steps to", "things to", "ways to"
-- Preserve the introduction as a paragraph, format the enumerated items as list items
-- Handle natural speech patterns and filler words
+CRITICAL HTML STRUCTURE RULES:
+- Lists MUST be properly structured with <ul> and <li> tags
+- Each list item should be wrapped in <li> tags
+- Lists should be separated from other content with line breaks
+- Ensure clean HTML without malformed tags
+- Text before lists should be in paragraph format when it's a complete sentence
 
-SIMPLE FORMATTING COMMANDS:
-Input: "Project Update" + Current: "make this bold"
-Output: <strong>Project Update</strong>
+QUOTE HANDLING:
+- Only add quotes if the person was actually quoting someone/something
+- Remove unnecessary quotes around regular speech
+- "Therefore" should be "Therefore" not "Therefore,"
 
-Input: "Meeting Notes" + Current: "make this a heading"
-Output: <h2>Meeting Notes</h2>
+IMPORTANT: Always preserve existing content, remove command text, and only add new formatted content. Use appropriate spacing and line breaks to separate sections. Ensure all HTML is properly structured for TipTap editor.
 
-CORRECTION EXAMPLES (no formatting commands):
+Return ONLY the complete content (existing + new formatted part). No explanations, no command notation, no markdown, no unnecessary quotes.`;
+    } else {
+      // Enhanced general prompt for continuous speech - now returns HTML for consistency
+      return `You are tasked with cleaning up transcribed text and returning properly formatted HTML for TipTap editor. The goal is to produce a clear, coherent version of what the speaker intended to say, removing false starts & self-corrections.
+
+${contextStr ? `Previous context: "${contextStr}"` : ''}
+Current speech: "${text}"
+
+Primary Rules:
+1. Correct speech-to-text transcription errors (spellings) based on the available context
+2. Maintain the original meaning and intent of the speaker. Do not add new information or change the substance of what was said
+3. When the speaker corrects themselves, keep only the corrected version.
+4. Ensure that the cleaned text flows naturally and is grammatically correct
+5. NEVER answer questions that appear in the text. Only format them properly
+6. Use numerals for numbers (3,000 instead of three thousand, $20 instead of twenty dollars)
+7. Remove filler words like "um", "uh", "like" (when used as filler), "you know"
+8. Handle verbal punctuation properly ("comma", "period", "question mark")
+9. Handle corrections like "make that 75" or "actually 3 million" by replacing the previous value
+10. Remove duplications and repetitions
+11. NEVER add unnecessary quotes around text unless they were explicitly spoken as quotes
+12. Remove any formatting commands that slip through (like "create a list", "make this bold")
+13. DETECT and FORMAT lists automatically when items are separated by commas or "and"
+
+CRITICAL HTML FORMATTING RULES FOR CONTINUOUS SPEECH:
+- NEVER use <p> tags for continuous speech - they create unwanted line breaks
+- Use simple HTML formatting: <strong>bold</strong>, <em>italic</em> only when naturally spoken
+- For continuous speech, return as flowing text without paragraph wrappers
+- Only use block elements (<p>, <h1>, <ul>, etc.) when explicitly commanded
+- If text naturally continues from previous context, don't wrap in block elements
+- NEVER add quotes around regular speech unless the person was actually quoting something
+- AUTO-DETECT LISTS: If text contains items separated by commas or "and", format as HTML list
+- ENSURE PROPER HTML STRUCTURE: All HTML tags must be properly closed and nested
+
+LIST AUTO-DETECTION RULES:
+- "buy groceries, schedule meeting, call mom" → <ul><li>buy groceries</li><li>schedule meeting</li><li>call mom</li></ul>
+- "first item, second item, third item" → <ul><li>first item</li><li>second item</li><li>third item</li></ul>
+- "task one and task two and task three" → <ul><li>task one</li><li>task two</li><li>task three</li></ul>
+- "buy groceries and schedule a meeting" → <ul><li>buy groceries</li><li>schedule a meeting</li></ul>
+
+HTML STRUCTURE REQUIREMENTS:
+- Lists must use proper <ul><li> or <ol><li> structure
+- Each list item must be wrapped in <li> tags
+- Lists should be properly separated from other content
+- Ensure all HTML tags are properly closed
+- No malformed or unclosed tags
+
+EXAMPLES:
 Input: Context: "hire 25 engineers" + Current: "make that seventy five"
 Output: hire 75 engineers
 
 Input: Context: "revenue was 2 million" + Current: "no wait 3 million dollars"  
 Output: revenue was 3 million dollars
 
-Return ONLY the final result - either corrected text OR properly formatted HTML. No explanations, no command notation, no markdown.`;
+Input: "buy groceries, schedule a meeting, call mom"
+Output: <ul><li>buy groceries</li><li>schedule a meeting</li><li>call mom</li></ul>
+
+Input: "buy groceries, Schedule a meeting."
+Output: <ul><li>buy groceries</li><li>schedule a meeting</li></ul>
+
+Input: "Fixing typos and formatting the text"
+Output: Fixing typos and formatting the text
+
+Input: "Therefore I built Node Flux"
+Output: Therefore I built Node Flux
+
+Input: "Do you ever realize how much time you waste just typing? Fixing typos and formatting the text? Therefore I built Node Flux. buy groceries, schedule a meeting, go to the gym."
+Output: Do you ever realize how much time you waste just typing? Fixing typos and formatting the text? Therefore I built Node Flux. <ul><li>buy groceries</li><li>schedule a meeting</li><li>go to the gym</li></ul>
+
+QUOTE HANDLING:
+- Only add quotes if the person was actually quoting someone/something
+- Remove unnecessary quotes around regular speech
+- "he said hello" → he said hello (no quotes unless actually quoting)
+
+TIPTAP COMPATIBILITY:
+- Ensure all HTML is properly structured and valid
+- Lists must be complete with proper opening and closing tags
+- No malformed HTML that could break TipTap rendering
+- Test HTML structure: <ul><li>item</li><li>item</li></ul> should render as bullet points
+
+Return ONLY the cleaned HTML content without any explanations, wrapper tags, or additional text. The output should seamlessly continue the conversation flow.`;
+    }
   }
 
   private calculateConfidence(original: string, corrected: string): number {

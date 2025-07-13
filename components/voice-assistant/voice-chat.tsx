@@ -3,12 +3,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, MicOff, Zap, ZapOff } from 'lucide-react';
 import { toast } from 'sonner';
-import VoiceTranscript from './voice-transcript';
 // import ModelSelector from './model-selector';
 import VoiceAgentSelector, { VoiceAgent } from './voice-agent-selector';
 import { DeepgramService } from '@/lib/deepgram-service';
 import { TranscriptService } from '@/lib/services/transcript-service';
-import { RealtimeTranscriptManager, RealtimeTranscriptState } from '@/lib/services/realtime-transcript-manager';
+import { GrokService } from '@/lib/services/grok-service';
 import { useAnalytics } from '@/hooks/use-analytics';
 import TiptapEditor from '@/components/editor/tiptap-editor';
 
@@ -30,58 +29,164 @@ type VoiceChatProps = {
 
 const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: VoiceChatProps = {}) => {
   const [isListening, setIsListening] = useState(false);
-  const [transcript, setTranscript] = useState("");
-  const [isThinking, setIsThinking] = useState(false);
-  const [accumulatedTranscript, setAccumulatedTranscript] = useState<string>("");
+  const [currentTranscript, setCurrentTranscript] = useState(""); // Current interim transcript
+  const [correctedTranscript, setCorrectedTranscript] = useState(""); // AI-corrected transcript
   const [selectedModel, setSelectedModel] = useState<LLMModel>('gpt-4o-mini');
   const [selectedVoiceAgent, setSelectedVoiceAgent] = useState<VoiceAgent>('deepgram');
-  const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeechSupported, setIsSpeechSupported] = useState(true);
-  
-  // New state for intelligent processing
-  const [isIntelligentMode, setIsIntelligentMode] = useState(true);
-  const [transcriptState, setTranscriptState] = useState<RealtimeTranscriptState | null>(null);
-  const [serviceAvailable, setServiceAvailable] = useState(false);
+  const [isInListContext, setIsInListContext] = useState(false); // Track if we're expecting list items
   
   // Analytics tracking
   const analytics = useAnalytics();
   const [recordingStartTime, setRecordingStartTime] = useState<number | null>(null);
   
-  // Editor state
-  const [editorContent, setEditorContent] = useState("");
-  
   const recognitionRef = useRef<any>(null);
   const deepgramServiceRef = useRef<DeepgramService | null>(null);
   const timeoutRef = useRef<number | null>(null);
   const transcriptService = useRef(new TranscriptService());
-  const realtimeManager = useRef<RealtimeTranscriptManager | null>(null);
+  const grokService = useRef(new GrokService());
   
   // API keys from environment variables
   const openaiApiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
   const deepgramApiKey = process.env.NEXT_PUBLIC_DEEPGRAM_API_KEY;
 
-  // Initialize realtime transcript manager
-  useEffect(() => {
-    realtimeManager.current = new RealtimeTranscriptManager();
+  // Get last 2-3 sentences from corrected transcript for context
+  const getContextSentences = () => {
+    if (!correctedTranscript) return [];
     
-    // Subscribe to transcript updates
-    const unsubscribe = realtimeManager.current.onUpdate((state) => {
-      setTranscriptState(state);
-      setAccumulatedTranscript(state.processedTranscript);
-      setIsProcessing(state.isProcessing);
-      if (onTranscriptUpdate) {
-        onTranscriptUpdate(state.processedTranscript);
+    // Split by sentence endings and get last 2-3 sentences
+    const sentences = correctedTranscript.split(/[.!?]+/).filter(s => s.trim());
+    return sentences.slice(-3).map(s => s.trim()).filter(s => s);
+  };
+
+  // Process text with Grok AI and add to corrected transcript
+  const processWithGrok = async (text: string) => {
+    if (!text.trim()) return;
+    
+    try {
+      const context = getContextSentences();
+      
+      // Enhanced command detection - check for commands with content
+      const hasFormattingCommand = /\b(make|create|bold|italic|heading|list|bullet|numbered|quote|center|align)\b/i.test(text);
+      const hasListCommand = /\b(create|make|bullet|numbered)\s+(a\s+)?(list|listing)\b/i.test(text);
+      const hasContentAfterCommand = text.split(/\b(create|make|bullet|numbered)\s+(a\s+)?(list|listing)\b/i).pop()?.trim();
+      
+      // Detect if text contains list items (comma-separated or "and" separated)
+      const hasListItems = /\w+,\s*\w+|(\w+\s+and\s+\w+\s+and\s+\w+)|(\w+\s+and\s+\w+)/.test(text);
+      
+      // Check if this could be a single list item when in list context
+      const couldBeListItem = isInListContext && text.trim().length > 0 && !hasFormattingCommand && !hasListCommand;
+      
+      // If it's just a list command without items, don't process yet - wait for items
+      if (hasListCommand && (!hasContentAfterCommand || hasContentAfterCommand.length < 3)) {
+        console.log('List command detected but no items yet, waiting...');
+        // Set list context to true and don't show the command in the editor
+        setIsInListContext(true);
+        setCurrentTranscript("");
+        return;
       }
-    });
+      
+      // If it's a formatting command with content OR contains list items OR could be a list item, process it
+      if (hasFormattingCommand || hasListItems || couldBeListItem) {
+        // For list commands, ensure we're in list context
+        if (hasListCommand || hasListItems) {
+          setIsInListContext(true);
+        }
+        
+        // Process with full AI for formatting commands
+        const result = await grokService.current.correctTranscript(text, context);
+        
+        // For formatting commands, replace or append based on AI decision
+        setCorrectedTranscript(prev => {
+          if (!prev) {
+            return result.correctedText;
+          }
+          
+          // Check if the AI result contains our previous content
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = result.correctedText;
+          const aiTextContent = tempDiv.textContent || tempDiv.innerText || '';
+          const prevTextContent = prev.replace(/<[^>]*>/g, '').trim();
+          
+          // If AI result contains our previous content, use it as the full content
+          if (aiTextContent.includes(prevTextContent)) {
+            return result.correctedText;
+          } else {
+            // Otherwise, append the AI result to existing content
+            return prev + "\n\n" + result.correctedText;
+          }
+        });
+      } else {
+        // For continuous speech, get corrected HTML and append seamlessly
+        const result = await grokService.current.correctTranscript(text, context);
+        
+        // Reset list context if we're processing continuous speech
+        if (isInListContext) {
+          setIsInListContext(false);
+        }
+        
+        // Add corrected HTML to existing corrected transcript with seamless flow
+        setCorrectedTranscript(prev => {
+          if (!prev) {
+            return result.correctedText;
+          }
+          
+          // For continuous speech, combine without line breaks to maintain flow
+          // Check if we need a space separator between HTML content
+          const prevEndsWithSpace = prev.endsWith(' ');
+          const currentStartsWithSpace = result.correctedText.startsWith(' ');
+          
+          if (prevEndsWithSpace || currentStartsWithSpace) {
+            // No additional space needed
+            return prev + result.correctedText;
+          } else {
+            // Add space for natural word flow
+            return prev + ' ' + result.correctedText;
+          }
+        });
+      }
+      
+      // Clear interim text only after corrected text is added
+      setCurrentTranscript("");
+      
+    } catch (error) {
+      console.error('Error processing with Grok:', error);
+      // Fallback: add raw text as HTML content if processing fails
+      setCorrectedTranscript(prev => {
+        if (!prev) {
+          return text;
+        }
+        
+        // Add space for natural word flow, similar to successful processing
+        const prevEndsWithSpace = prev.endsWith(' ');
+        const currentStartsWithSpace = text.startsWith(' ');
+        
+        if (prevEndsWithSpace || currentStartsWithSpace) {
+          return prev + text;
+        } else {
+          return prev + ' ' + text;
+        }
+      });
+      
+      // Clear interim text even on error
+      setCurrentTranscript("");
+    }
+  };
 
-    // Check service availability
-    realtimeManager.current.isServiceAvailable().then(setServiceAvailable);
+  // Get combined text for editor: corrected + interim
+  const getEditorContent = () => {
+    // Return the corrected HTML content directly
+    // For continuous speech, this will be seamless HTML without paragraph breaks
+    // For formatting commands, this will include proper TipTap HTML formatting
+    return correctedTranscript;
+  };
 
-    return () => {
-      unsubscribe();
-      realtimeManager.current?.destroy();
-    };
-  }, []);
+  // Update parent when correctedTranscript changes
+  useEffect(() => {
+    if (onTranscriptUpdate) {
+      onTranscriptUpdate(correctedTranscript);
+    }
+  }, [correctedTranscript, onTranscriptUpdate]);
   
   // Toggle listening state
   const toggleListening = async () => {
@@ -109,12 +214,11 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
           deepgramServiceRef.current.stopListening();
         }
         setIsListening(false);
-        setIsThinking(true);
         
         // Track recording end
         if (recordingStartTime) {
           const duration = (Date.now() - recordingStartTime) / 1000;
-          analytics.trackVoiceRecordingEnd(duration, accumulatedTranscript.length, 'deepgram');
+          analytics.trackVoiceRecordingEnd(duration, correctedTranscript.length, 'deepgram');
           setRecordingStartTime(null);
         }
       } else {
@@ -130,26 +234,11 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
         await deepgramServiceRef.current.startListening(
           (transcriptText: string, isFinal: boolean) => {
             if (isFinal) {
-              setTranscript("");
-              const newTranscript = transcriptText.trim();
-              if (newTranscript) {
-                if (isIntelligentMode && realtimeManager.current) {
-                  // Add to intelligent processing
-                  realtimeManager.current.addChunk(newTranscript, true);
-                } else {
-                  // Traditional mode
-                  setAccumulatedTranscript(prev => {
-                    const separator = prev ? " " : "";
-                    return prev + separator + newTranscript;
-                  });
-                }
-              }
+              // Process final text with Grok in background
+              processWithGrok(transcriptText);
             } else {
-              setTranscript(transcriptText);
-              if (isIntelligentMode && realtimeManager.current && transcriptText.length > 10) {
-                // Add interim results for processing
-                realtimeManager.current.addChunk(transcriptText, false);
-              }
+              // Show interim results
+              setCurrentTranscript(transcriptText);
             }
           },
           (error: any) => {
@@ -174,11 +263,10 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
           },
           () => {
             setIsListening(true);
-            toast(`Listening with Deepgram Nova 2...`);
+            toast(`Listening `);
           },
           () => {
             setIsListening(false);
-            setIsThinking(false);
             // Notify parent that usage data should be refreshed
             onUsageUpdated?.();
           }
@@ -191,7 +279,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
     }
   };
 
-  // WebSpeech listening logic (existing)
+  // WebSpeech listening logic
   const toggleWebSpeechListening = () => {
     // Initialize speech recognition on first click if not already initialized
     if (!recognitionRef.current) {
@@ -215,36 +303,23 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
           for (let i = event.resultIndex; i < event.results.length; i++) {
             const result = event.results[i];
             if (result.isFinal) {
-              setTranscript("");
-              const newTranscript = result[0].transcript.trim();
-              
-              if (isIntelligentMode && realtimeManager.current) {
-                // Add to intelligent processing
-                realtimeManager.current.addChunk(newTranscript, true);
-              } else {
-                // Traditional mode
-                setAccumulatedTranscript(prev => {
-                  const separator = prev ? " " : "";
-                  return prev + separator + newTranscript;
-                });
-              }
+              // Process final text with Grok in background
+              // Don't clear currentTranscript here - let processWithGrok handle it
+              // This prevents text flickering in the editor
+              processWithGrok(result[0].transcript);
             } else {
               interimTranscript += result[0].transcript;
-              if (isIntelligentMode && realtimeManager.current && interimTranscript.length > 10) {
-                // Add interim results for processing
-                realtimeManager.current.addChunk(interimTranscript, false);
-              }
             }
           }
           
-          setTranscript(interimTranscript);
+          // Show interim results
+          setCurrentTranscript(interimTranscript);
           
           // Reset the timeout for auto-stopping
           if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
           
           timeoutRef.current = window.setTimeout(() => {
             if (isListening && recognitionRef.current) {
-              setIsThinking(true);
               recognitionRef.current.stop();
             }
           }, 1500); // Stop after 1.5 seconds of silence
@@ -258,7 +333,6 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
         
         recognition.onend = () => {
           setIsListening(false);
-          setIsThinking(false);
           console.log("Speech recognition ended");
         };
         
@@ -280,14 +354,13 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
         if (timeoutRef.current) {
           window.clearTimeout(timeoutRef.current);
         }
-        setIsThinking(true);
       } else {
         // Start listening
         console.log("Starting speech recognition");
         recognitionRef.current.start();
-        setTranscript("");
+        setCurrentTranscript("");
         setIsListening(true);
-        toast(`Listening with WebSpeech${isIntelligentMode ? ' + AI Processing' : ''}...`);
+        toast(`Listening with WebSpeech + AI Processing...`);
       }
     } catch (error) {
       console.error("Error toggling speech recognition:", error);
@@ -315,16 +388,10 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
   }, []);
   
   const clearTranscript = () => {
-    setAccumulatedTranscript("");
-    if (realtimeManager.current) {
-      realtimeManager.current.clear();
-    }
+    setCorrectedTranscript("");
+    setCurrentTranscript("");
+    setIsInListContext(false); // Reset list context when clearing
   };
-  
-  // const handleModelChange = (model: LLMModel) => {
-  //   setSelectedModel(model);
-  //   toast(`Switched to ${model} model`);
-  // };
 
   const handleVoiceAgentChange = (agent: VoiceAgent) => {
     const previousAgent = selectedVoiceAgent;
@@ -337,31 +404,13 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
         recognitionRef.current.stop();
       }
       setIsListening(false);
-      setIsThinking(false);
     }
 
     setSelectedVoiceAgent(agent);
-    toast(`Switched to ${agent === 'deepgram' ? 'Deepgram Nova 2' : 'WebSpeech API'}`);
+    toast(`Switched to ${agent === 'deepgram' ? 'Deepgram Nova 2' : 'WebSpeech API'} + AI Processing`);
     
     // Track agent switch
     analytics.trackVoiceAgentSwitch(previousAgent, agent);
-  };
-
-  // Toggle intelligent processing mode
-  const toggleIntelligentMode = () => {
-    const newMode = !isIntelligentMode;
-    setIsIntelligentMode(newMode);
-    if (realtimeManager.current) {
-      realtimeManager.current.setEnabled(newMode);
-    }
-    toast(
-      newMode 
-        ? "🧠 AI Processing enabled - Real-time corrections with Grok" 
-        : "📝 Basic mode - Raw transcription only"
-    );
-    
-    // Track intelligent mode toggle
-    analytics.trackIntelligentModeToggle(newMode);
   };
   
   // Handle saving transcript
@@ -369,13 +418,8 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
     const saveStartTime = Date.now();
     
     try {
-      // Use processed transcript if available
-      const contentToSave = isIntelligentMode && transcriptState 
-        ? transcriptState.processedTranscript 
-        : transcriptContent;
-
       const { data, error } = await transcriptService.current.saveTranscript({
-        content: contentToSave,
+        content: transcriptContent,
         voice_agent: voiceAgent,
         model_used: model
       });
@@ -386,7 +430,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
 
       // Track successful save
       const saveTime = (Date.now() - saveStartTime) / 1000;
-      analytics.trackTranscriptSaved(contentToSave.length, saveTime);
+      analytics.trackTranscriptSaved(transcriptContent.length, saveTime);
       
       // Track engagement milestone for first save
       analytics.trackEngagementMilestone('first_transcript_save', 1);
@@ -410,20 +454,11 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
     }
   };
 
-  // Get display transcript (processed or raw)
-  const getDisplayTranscript = () => {
-    if (isIntelligentMode && transcriptState) {
-      return transcriptState.processedTranscript;
-    }
-    return accumulatedTranscript;
-  };
-
   const handleEditorChange = (content: string) => {
-    setEditorContent(content);
-    // Sync with transcript updates if needed
-    if (onTranscriptUpdate) {
-      onTranscriptUpdate(content);
-    }
+    // Update corrected transcript when user manually edits
+    setCorrectedTranscript(content);
+    // Reset list context on manual edit since user is taking control
+    setIsInListContext(false);
   };
 
   return (
@@ -433,16 +468,14 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
           <div className="flex flex-col h-full">
             {/* Header with selectors */}
             <div className="flex items-center justify-between p-3 sm:p-4 border-b border-gray-700/30 flex-shrink-0">
-              <h3 className="text-sm font-medium text-gray-300">Noteflux</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-medium text-gray-300">Noteflux</h3>
+              </div>
               <div className="flex items-center gap-2 sm:gap-3">
                 <VoiceAgentSelector 
                   selectedAgent={selectedVoiceAgent}
                   onAgentChange={handleVoiceAgentChange}
                 />
-                {/* <ModelSelector 
-                  selectedModel={selectedModel}
-                  onModelChange={handleModelChange}
-                /> */}
               </div>
             </div>
             
@@ -471,12 +504,8 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
                     <div className="flex items-center justify-center">
                       <div className="pulse-ring mr-2"></div>
                       <span>
-                        Listening with {selectedVoiceAgent === 'deepgram' ? 'Deepgram Nova 2' : 'WebSpeech'}...
+                        Listening with {selectedVoiceAgent === 'deepgram' ? 'Deepgram Nova 2' : 'WebSpeech'} + AI Processing...
                       </span>
-                    </div>
-                  ) : isThinking ? (
-                    <div className="flex items-center justify-center">
-                      <span>Processing your input...</span>
                     </div>
                   ) : (
                     <span>
@@ -492,11 +521,9 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
                       <div 
                         key={i} 
                         className={`w-1 sm:w-1.5 rounded-full audio-bar ${
-                          isIntelligentMode 
+                          selectedVoiceAgent === 'deepgram' 
                             ? 'bg-purple-500/70' 
-                            : selectedVoiceAgent === 'deepgram' 
-                              ? 'bg-blue-500/70' 
-                              : 'bg-green-500/70'
+                            : 'bg-purple-500/70'
                         }`}
                         style={{ 
                           animationDelay: `${i * 0.05}s`,
@@ -508,25 +535,22 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
                 )}
               </div>
               
-              {/* Tiptap Editor - positioned below mic */}
+              {/* Tiptap Editor - shows corrected + interim text */}
               <div className="flex-1 overflow-hidden">
                 <TiptapEditor
-                  content={getDisplayTranscript()}
+                  content={getEditorContent()}
                   onChange={handleEditorChange}
-                  transcript={transcript}
-                  isListening={isListening}
+                  transcript=""
+                  isListening={false}
                   onVoiceCommand={(command) => {
                     console.log('Voice command received:', command);
                   }}
                   enableSaveFeatures={true}
                   onSave={async (content: string) => {
-                    // Save the corrected transcript content
                     await handleSaveTranscript(content, selectedVoiceAgent, selectedModel);
                   }}
                   onClear={() => {
-                    // Clear the transcript and editor
                     clearTranscript();
-                    setEditorContent('');
                   }}
                 />
               </div>
