@@ -17,13 +17,12 @@ export default function Home() {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [sessionStartTime] = useState(Date.now());
   const analytics = useAnalytics();
-  const [correctedTranscript, setCorrectedTranscript] = useState("");
-
   useEffect(() => {
     // Track session start and page visit
     analytics.trackSessionStart();
     analytics.trackPageVisit('dashboard');
 
+    
     // Track session end on unmount
     return () => {
       const sessionDuration = (Date.now() - sessionStartTime) / 1000;
@@ -51,7 +50,8 @@ export default function Home() {
   };
 
   const handleTranscriptUpdate = (transcript: string) => {
-    setCorrectedTranscript(transcript);
+    // Handle transcript updates for analytics or other features
+    console.log('Transcript updated:', transcript.length, 'characters');
   };
 
   return (

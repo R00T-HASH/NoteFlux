@@ -1,11 +1,27 @@
 import { createClient, LiveTranscriptionEvents } from "@deepgram/sdk";
 import { UsageService } from './services/usage-service';
 
+// Enhanced transcript data structure to handle native Deepgram features
+export interface DeepgramTranscriptData {
+  transcript: string;
+  isFinal: boolean;
+  speechFinal: boolean;
+  utteranceEnd: boolean;
+  confidence: number;
+  words?: Array<{
+    word: string;
+    punctuated_word: string;
+    start: number;
+    end: number;
+    confidence: number;
+  }>;
+}
+
 export class DeepgramService {
   private deepgram: any;
   private connection: any;
   private isConnected: boolean = false;
-  private onTranscriptCallback?: (transcript: string, isFinal: boolean) => void;
+  private onTranscriptCallback?: (data: DeepgramTranscriptData) => void;
   private onErrorCallback?: (error: any) => void;
   private onOpenCallback?: () => void;
   private onCloseCallback?: () => void;
@@ -30,7 +46,7 @@ export class DeepgramService {
   }
 
   async startListening(
-    onTranscript: (transcript: string, isFinal: boolean) => void,
+    onTranscript: (data: DeepgramTranscriptData) => void,
     onError?: (error: any) => void,
     onOpen?: () => void,
     onClose?: () => void
@@ -53,17 +69,37 @@ export class DeepgramService {
       this.sessionStartTime = Date.now();
       this.usageRecorded = false; // Reset for new session
 
-      // Create a live transcription connection
+      // Enhanced Deepgram configuration leveraging native capabilities
       this.connection = this.deepgram.listen.live({
         model: "nova-2",
         language: "en-US",
-        smart_format: true,
-        interim_results: true,
-        utterance_end_ms: 1500,
-        vad_events: true,
+        
+        // Native formatting and correction features
+        smart_format: true,        // Enhanced formatting for readability
+        punctuate: true,          // Native punctuation handling
+        numerals: true,           // Convert numbers automatically (3 -> three)
+        
+        // Real-time optimization
+        interim_results: true,     // Get live updates
+        utterance_end_ms: 1000,   // Faster utterance detection (reduced from 1500ms)
+        
+        // Audio quality optimization
+        filler_words: false,      // Skip "uh", "um" for cleaner transcripts
+        profanity_filter: false,  // Keep original content
+        diarize: false,          // Single speaker optimization
+        
+        // Speech detection
+        vad_events: true,        // Voice activity detection
+        
+        // Audio settings
         encoding: "linear16",
         sample_rate: 16000,
         channels: 1,
+        
+        // Advanced features for better transcript quality
+        replace: "",             // No content replacement
+        search: "",              // No search terms
+        tag: "voice-note-app",   // Tag for usage tracking
       });
 
       // Set up event listeners
@@ -81,9 +117,30 @@ export class DeepgramService {
       this.connection.on(LiveTranscriptionEvents.Transcript, (data: any) => {
         const transcript = data.channel?.alternatives?.[0]?.transcript;
         if (transcript && transcript.trim()) {
-          const isFinal = data.is_final || false;
-          this.onTranscriptCallback?.(transcript, isFinal);
+          // Extract enhanced data from Deepgram response
+          const transcriptData: DeepgramTranscriptData = {
+            transcript: transcript.trim(),
+            isFinal: data.is_final || false,
+            speechFinal: data.speech_final || false,
+            utteranceEnd: data.type === 'UtteranceEnd',
+            confidence: data.channel?.alternatives?.[0]?.confidence || 0,
+            words: data.channel?.alternatives?.[0]?.words || undefined
+          };
+          
+          this.onTranscriptCallback?.(transcriptData);
         }
+      });
+
+      // Handle utterance end events for better segmentation
+      this.connection.on(LiveTranscriptionEvents.UtteranceEnd, () => {
+        // Signal utterance boundary to transcript handler
+        this.onTranscriptCallback?.({
+          transcript: "",
+          isFinal: true,
+          speechFinal: true,
+          utteranceEnd: true,
+          confidence: 1.0
+        });
       });
 
       this.connection.on(LiveTranscriptionEvents.Error, (err: any) => {

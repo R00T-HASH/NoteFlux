@@ -299,6 +299,9 @@ body {
   outline: none;
   padding: 1rem;
   min-height: 500px;
+  max-height: 60vh;
+  overflow-y: auto;
+  scroll-behavior: smooth;
 }
 
 .tiptap-editor-dark .ProseMirror h1 {
@@ -472,6 +475,9 @@ body {
   outline: none;
   padding: 1rem;
   min-height: 500px;
+  max-height: 60vh;
+  overflow-y: auto;
+  scroll-behavior: smooth;
 }
 
 .tiptap-editor-light .ProseMirror h1 {

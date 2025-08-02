@@ -91,12 +91,6 @@ const UsageTracker = forwardRef<UsageTrackerRef, UsageTrackerProps>(({ className
           </div>
         )}
         
-        {isLowUsage && !isOutOfMinutes && (
-          <div className="text-xs text-yellow-400 bg-yellow-400/10 rounded p-2 mt-2">
-            <div className="font-medium mb-1">⚡ Running low on Deepgram minutes</div>
-            <div className="text-gray-300">💡 WebSpeech API is always free as backup</div>
-          </div>
-        )}
       </div>
     </div>
   );

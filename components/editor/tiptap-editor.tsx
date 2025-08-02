@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
@@ -42,6 +42,7 @@ interface TiptapEditorProps {
   onSave?: (content: string) => void; // Callback for save action
   onClear?: () => void; // Callback for clear action
   enableSaveFeatures?: boolean; // Whether to show save/clear buttons
+  onEditorReady?: (editor: any) => void; // Callback when editor is ready
 }
 
 const TiptapEditor: React.FC<TiptapEditorProps> = ({ 
@@ -53,13 +54,53 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
   onVoiceCommand,
   onSave,
   onClear,
-  enableSaveFeatures = false
+  enableSaveFeatures = false,
+  onEditorReady
 }) => {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [showVoiceHelp, setShowVoiceHelp] = useState(false);
   const [isEditorReady, setIsEditorReady] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const transcriptService = new TranscriptService();
+  const editorContentRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScroll = useRef(true); // Track if user wants autoscroll
+  const lastScrollTime = useRef(0);
+
+  // Simple and reliable autoscroll function
+  const autoScrollToBottom = useCallback(() => {
+    if (!shouldAutoScroll.current) return;
+    
+    // Debounce scroll operations
+    const now = Date.now();
+    if (now - lastScrollTime.current < 100) return;
+    lastScrollTime.current = now;
+    
+    setTimeout(() => {
+      const proseMirrorElement = editorContentRef.current?.querySelector('.ProseMirror') as HTMLElement;
+      if (!proseMirrorElement) return;
+      
+      const { scrollTop, scrollHeight, clientHeight } = proseMirrorElement;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      
+      // Always scroll if we're supposed to autoscroll and content exists
+      if (shouldAutoScroll.current && scrollHeight > clientHeight) {
+        proseMirrorElement.scrollTo({
+          top: scrollHeight,
+          behavior: 'smooth'
+        });
+        console.log('📜 Auto-scrolled to bottom:', { 
+          scrollHeight, 
+          clientHeight, 
+          distanceFromBottom: scrollHeight - clientHeight 
+        });
+      }
+    }, 100);
+  }, []);
+  
+  // Reset autoscroll when editor content changes externally
+  const resetAutoScroll = useCallback(() => {
+    shouldAutoScroll.current = true;
+  }, []);
 
   const editor = useEditor({
     extensions: [
@@ -78,10 +119,14 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
     immediatelyRender: false,
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML());
+      
+      // Auto-scroll when content is added via typing or voice
+      autoScrollToBottom();
     },
     onCreate: ({ editor }) => {
       setTimeout(() => {
         setIsEditorReady(true);
+        onEditorReady?.(editor);
       }, 100);
     },
     editorProps: {
@@ -107,15 +152,52 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
     }
   }, [externalTranscript, externalIsListening, editor, onVoiceCommand]);
 
-  // Use external voice state if provided, otherwise use internal
-  const isListening = externalIsListening ?? false;
-  const transcript = externalTranscript ?? '';
+  // Voice state variables (commented out to avoid unused warnings)
+  // const isListening = externalIsListening ?? false;
+  // const transcript = externalTranscript ?? '';
 
   useEffect(() => {
     if (editor && content !== editor.getHTML()) {
       editor.commands.setContent(content, false);
+      
+      // Reset and trigger autoscroll when content is updated externally
+      resetAutoScroll();
+      autoScrollToBottom();
     }
-  }, [content, editor]);
+  }, [content, editor, autoScrollToBottom, resetAutoScroll]);
+  
+  // Handle manual scroll events to detect user intention
+  useEffect(() => {
+    const proseMirrorElement = editorContentRef.current?.querySelector('.ProseMirror');
+    if (!proseMirrorElement) return;
+    
+    let lastUserScrollTop = 0;
+    
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = proseMirrorElement;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      
+      // Detect if user manually scrolled up (disable autoscroll)
+      if (scrollTop < lastUserScrollTop - 20) {
+        shouldAutoScroll.current = false;
+        console.log('🚫 Auto-scroll disabled - user scrolled up');
+      }
+      
+      // Re-enable autoscroll if user scrolls near bottom
+      if (distanceFromBottom < 50) {
+        shouldAutoScroll.current = true;
+        console.log('✅ Auto-scroll re-enabled - user at bottom');
+      }
+      
+      lastUserScrollTop = scrollTop;
+    };
+    
+    proseMirrorElement.addEventListener('scroll', handleScroll, { passive: true });
+    
+    return () => {
+      proseMirrorElement.removeEventListener('scroll', handleScroll);
+    };
+  }, [editor, isEditorReady]);
 
   // Log editor state changes
   useEffect(() => {
@@ -158,7 +240,6 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
 
     setIsSaving(true);
     try {
-      const plainText = editor.getText();
       const htmlContent = editor.getHTML();
       
       if (onSave) {
@@ -167,7 +248,7 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
         toast.success('Transcript saved successfully!');
       } else {
         // Default save to transcript service
-        const { data, error } = await transcriptService.saveTranscript({
+        const { error } = await transcriptService.saveTranscript({
           content: htmlContent,
           title: `Editor Note ${new Date().toLocaleDateString()}`,
           voice_agent: 'editor',
@@ -253,6 +334,8 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
     </button>
   );
 
+  // Voice Command Help Component (commented out to avoid unused warnings)
+  /*
   const VoiceCommandHelp = () => {
     return (
       <div className={`absolute top-12 left-0 right-0 p-4 border rounded-lg max-h-96 overflow-y-auto z-50 ${
@@ -262,7 +345,6 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
           Voice Commands (Use Homepage Mic)
         </h3>
         
-        {/* Info about using homepage mic */}
         <div className="mb-4 p-3 bg-blue-900/30 border border-blue-600/30 rounded-lg">
           <h4 className="text-sm font-medium text-blue-400 mb-2 flex items-center gap-1">
             🎤 Use Homepage Mic
@@ -274,7 +356,6 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
           </div>
         </div>
         
-        {/* Quick Examples */}
         <div className="mb-3">
           <h4 className="text-sm font-medium text-yellow-400 mb-2">🎯 Quick Examples:</h4>
           <div className="space-y-1 max-h-32 overflow-y-auto">
@@ -295,6 +376,7 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
       </div>
     );
   };
+  */
 
   const themeClass = isDarkMode ? 'tiptap-editor-dark' : 'tiptap-editor-light';
   const borderColor = isDarkMode ? 'border-gray-800/50' : 'border-gray-300';
@@ -552,10 +634,28 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
       </div>
 
       {/* Editor Content */}
-      <EditorContent 
-        editor={editor} 
-        className={themeClass}
-      />
+      <div ref={editorContentRef} className="relative">
+        <EditorContent 
+          editor={editor} 
+          className={themeClass}
+        />
+        
+        {/* Scroll to bottom button - show when autoscroll is disabled */}
+        {!shouldAutoScroll.current && (
+          <button
+            onClick={() => {
+              resetAutoScroll();
+              autoScrollToBottom();
+            }}
+            className="absolute bottom-4 right-4 bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-full shadow-lg transition-colors z-10"
+            title="Scroll to bottom and resume auto-scroll"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+            </svg>
+          </button>
+        )}
+      </div>
     </div>
   );
 };

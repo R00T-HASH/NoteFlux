@@ -1,87 +1,94 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Zap, ZapOff } from 'lucide-react';
+import { Mic, MicOff } from 'lucide-react';
 import { toast } from 'sonner';
-import VoiceTranscript from './voice-transcript';
 // import ModelSelector from './model-selector';
 import VoiceAgentSelector, { VoiceAgent } from './voice-agent-selector';
-import { DeepgramService } from '@/lib/deepgram-service';
+import { DeepgramService, DeepgramTranscriptData } from '@/lib/deepgram-service';
 import { TranscriptService } from '@/lib/services/transcript-service';
-import { RealtimeTranscriptManager, RealtimeTranscriptState } from '@/lib/services/realtime-transcript-manager';
+// Removed: EnhancedTranscriptManager - replaced with UnifiedVoiceProcessor
 import { useAnalytics } from '@/hooks/use-analytics';
+import { useUnifiedVoiceProcessing } from '@/hooks/use-unified-voice-processing';
 import TiptapEditor from '@/components/editor/tiptap-editor';
+import { Editor } from '@tiptap/react';
 
-// Type declarations for the Web Speech API
+// Type declarations for the Web Speech API (commented out for Deepgram-only mode)
+/*
 declare global {
   interface Window {
     SpeechRecognition: any;
     webkitSpeechRecognition: any;
   }
 }
+*/
 
 export type LLMModel = 'gpt-4o-mini' | 'gpt-4o' | 'gpt-4.5-preview';
 
-type VoiceChatProps = {
-  onTranscriptSaved?: () => void;
+interface VoiceChatProps {
+  onTranscriptSaved?: (transcript: string) => void;
   onUsageUpdated?: () => void;
   onTranscriptUpdate?: (transcript: string) => void;
-};
+}
 
 const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: VoiceChatProps = {}) => {
   const [isListening, setIsListening] = useState(false);
-  const [transcript, setTranscript] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [accumulatedTranscript, setAccumulatedTranscript] = useState<string>("");
-  const [selectedModel, setSelectedModel] = useState<LLMModel>('gpt-4o-mini');
+  const [selectedModel] = useState<LLMModel>('gpt-4o-mini');
   const [selectedVoiceAgent, setSelectedVoiceAgent] = useState<VoiceAgent>('deepgram');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isSpeechSupported, setIsSpeechSupported] = useState(true);
+  const [, setIsSpeechSupported] = useState(true);
   
-  // New state for intelligent processing
-  const [isIntelligentMode, setIsIntelligentMode] = useState(true);
-  const [transcriptState, setTranscriptState] = useState<RealtimeTranscriptState | null>(null);
-  const [serviceAvailable, setServiceAvailable] = useState(false);
   
   // Analytics tracking
   const analytics = useAnalytics();
   const [recordingStartTime, setRecordingStartTime] = useState<number | null>(null);
   
   // Editor state
-  const [editorContent, setEditorContent] = useState("");
+  const [currentEditor, setCurrentEditor] = useState<Editor | null>(null);
   
-  const recognitionRef = useRef<any>(null);
+  // const recognitionRef = useRef<any>(null); // Commented out for Deepgram-only mode
   const deepgramServiceRef = useRef<DeepgramService | null>(null);
   const timeoutRef = useRef<number | null>(null);
   const transcriptService = useRef(new TranscriptService());
-  const realtimeManager = useRef<RealtimeTranscriptManager | null>(null);
+  const onTranscriptUpdateRef = useRef(onTranscriptUpdate);
   
+  // Unified voice processing integration
+  const voiceProcessing = useUnifiedVoiceProcessing({
+    editor: currentEditor,
+    onProcessed: (transcript, _, wasCommand) => {
+      if (wasCommand) {
+        analytics.trackFeatureUsed('voice_command_executed', { command: transcript });
+        console.log(`✅ Voice command executed: ${transcript}`);
+      } else {
+        console.log(`📝 Regular text processed: ${transcript}`);
+      }
+      
+      // Update accumulated transcript for display
+      const textContent = currentEditor?.getText() || '';
+      setAccumulatedTranscript(textContent);
+      
+      // Call parent callback
+      if (onTranscriptUpdateRef.current) {
+        onTranscriptUpdateRef.current(textContent);
+      }
+    }
+  });
+  
+  // Update the callback ref when it changes
+  useEffect(() => {
+    onTranscriptUpdateRef.current = onTranscriptUpdate;
+  }, [onTranscriptUpdate]);
+
   // API keys from environment variables
-  const openaiApiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
   const deepgramApiKey = process.env.NEXT_PUBLIC_DEEPGRAM_API_KEY;
 
-  // Initialize realtime transcript manager
+  // Clear voice processing context when editor is cleared
   useEffect(() => {
-    realtimeManager.current = new RealtimeTranscriptManager();
-    
-    // Subscribe to transcript updates
-    const unsubscribe = realtimeManager.current.onUpdate((state) => {
-      setTranscriptState(state);
-      setAccumulatedTranscript(state.processedTranscript);
-      setIsProcessing(state.isProcessing);
-      if (onTranscriptUpdate) {
-        onTranscriptUpdate(state.processedTranscript);
-      }
-    });
-
-    // Check service availability
-    realtimeManager.current.isServiceAvailable().then(setServiceAvailable);
-
-    return () => {
-      unsubscribe();
-      realtimeManager.current?.destroy();
-    };
-  }, []);
+    if (currentEditor?.isEmpty) {
+      voiceProcessing.clearContext();
+    }
+  }, [currentEditor?.isEmpty, voiceProcessing]);
   
   // Toggle listening state
   const toggleListening = async () => {
@@ -90,7 +97,8 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
     if (selectedVoiceAgent === 'deepgram') {
       await toggleDeepgramListening();
     } else {
-      toggleWebSpeechListening();
+      // WebSpeech fallback commented out - Deepgram only
+      toast('🔴 Usage limit reached. Please try again later.', { duration: 4000 });
     }
   };
 
@@ -128,29 +136,9 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
         setRecordingStartTime(Date.now());
 
         await deepgramServiceRef.current.startListening(
-          (transcriptText: string, isFinal: boolean) => {
-            if (isFinal) {
-              setTranscript("");
-              const newTranscript = transcriptText.trim();
-              if (newTranscript) {
-                if (isIntelligentMode && realtimeManager.current) {
-                  // Add to intelligent processing
-                  realtimeManager.current.addChunk(newTranscript, true);
-                } else {
-                  // Traditional mode
-                  setAccumulatedTranscript(prev => {
-                    const separator = prev ? " " : "";
-                    return prev + separator + newTranscript;
-                  });
-                }
-              }
-            } else {
-              setTranscript(transcriptText);
-              if (isIntelligentMode && realtimeManager.current && transcriptText.length > 10) {
-                // Add interim results for processing
-                realtimeManager.current.addChunk(transcriptText, false);
-              }
-            }
+          async (data: DeepgramTranscriptData) => {
+            // Process transcript with unified voice processor
+            await voiceProcessing.processTranscript(data);
           },
           (error: any) => {
             console.error('Deepgram error:', error);
@@ -164,7 +152,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
             
             // Check if it's a usage limit error
             if (error.message && error.message.includes('Free Deepgram minutes used up')) {
-              toast("🎯 Free Deepgram minutes used up! ✅ WebSpeech API is still available (free). Switch to WebSpeech to continue.", {
+              toast("🔴 Usage limit reached (90 minutes). Please try again later.", {
                 duration: 6000,
               });
               analytics.trackEngagementMilestone('deepgram_limit_reached', 1);
@@ -191,113 +179,19 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
     }
   };
 
-  // WebSpeech listening logic (existing)
+  // WebSpeech listening logic (commented out for Deepgram-only mode)
+  /*
   const toggleWebSpeechListening = () => {
-    // Initialize speech recognition on first click if not already initialized
-    if (!recognitionRef.current) {
-      try {
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        
-        if (!SpeechRecognition) {
-          toast("Speech recognition is not supported in your browser. Try Chrome or Edge.");
-          setIsSpeechSupported(false);
-          return;
-        }
-        
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = 'en-US';
-        
-        recognition.onresult = (event: any) => {
-          let interimTranscript = '';
-          
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            const result = event.results[i];
-            if (result.isFinal) {
-              setTranscript("");
-              const newTranscript = result[0].transcript.trim();
-              
-              if (isIntelligentMode && realtimeManager.current) {
-                // Add to intelligent processing
-                realtimeManager.current.addChunk(newTranscript, true);
-              } else {
-                // Traditional mode
-                setAccumulatedTranscript(prev => {
-                  const separator = prev ? " " : "";
-                  return prev + separator + newTranscript;
-                });
-              }
-            } else {
-              interimTranscript += result[0].transcript;
-              if (isIntelligentMode && realtimeManager.current && interimTranscript.length > 10) {
-                // Add interim results for processing
-                realtimeManager.current.addChunk(interimTranscript, false);
-              }
-            }
-          }
-          
-          setTranscript(interimTranscript);
-          
-          // Reset the timeout for auto-stopping
-          if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
-          
-          timeoutRef.current = window.setTimeout(() => {
-            if (isListening && recognitionRef.current) {
-              setIsThinking(true);
-              recognitionRef.current.stop();
-            }
-          }, 1500); // Stop after 1.5 seconds of silence
-        };
-        
-        recognition.onerror = (event: any) => {
-          console.error('Speech recognition error:', event);
-          setIsListening(false);
-          toast("Error with voice recognition. Please try again.");
-        };
-        
-        recognition.onend = () => {
-          setIsListening(false);
-          setIsThinking(false);
-          console.log("Speech recognition ended");
-        };
-        
-        // Store the recognition object
-        recognitionRef.current = recognition;
-      } catch (error) {
-        console.error("Error initializing speech recognition:", error);
-        setIsSpeechSupported(false);
-        toast("Speech recognition failed to initialize. Try using Chrome or Edge browser.");
-        return;
-      }
-    }
-    
-    try {
-      if (isListening) {
-        // Stop listening
-        console.log("Stopping speech recognition");
-        recognitionRef.current.stop();
-        if (timeoutRef.current) {
-          window.clearTimeout(timeoutRef.current);
-        }
-        setIsThinking(true);
-      } else {
-        // Start listening
-        console.log("Starting speech recognition");
-        recognitionRef.current.start();
-        setTranscript("");
-        setIsListening(true);
-        toast(`Listening with WebSpeech${isIntelligentMode ? ' + AI Processing' : ''}...`);
-      }
-    } catch (error) {
-      console.error("Error toggling speech recognition:", error);
-      toast("Failed to start speech recognition. Please try reloading the page.");
-    }
+    // WebSpeech implementation commented out
+    // Only Deepgram service is used now
+    toast('🔴 WebSpeech fallback disabled. Using Deepgram only.', { duration: 3000 });
   };
+  */
   
-  // Clean up on unmount
+  // Clean up on unmount (WebSpeech cleanup commented out for Deepgram-only mode)
   useEffect(() => {
     return () => {
+      /*
       if (recognitionRef.current) {
         try {
           recognitionRef.current.abort();
@@ -305,6 +199,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
           console.error("Error aborting speech recognition:", e);
         }
       }
+      */
       if (deepgramServiceRef.current) {
         deepgramServiceRef.current.stopListening();
       }
@@ -316,8 +211,9 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
   
   const clearTranscript = () => {
     setAccumulatedTranscript("");
-    if (realtimeManager.current) {
-      realtimeManager.current.clear();
+    if (currentEditor) {
+      currentEditor.commands.clearContent();
+      voiceProcessing.clearContext();
     }
   };
   
@@ -326,6 +222,8 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
   //   toast(`Switched to ${model} model`);
   // };
 
+  // Voice agent change handler (commented out for Deepgram-only mode)
+  /*
   const handleVoiceAgentChange = (agent: VoiceAgent) => {
     const previousAgent = selectedVoiceAgent;
     
@@ -333,48 +231,29 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
     if (isListening) {
       if (selectedVoiceAgent === 'deepgram' && deepgramServiceRef.current) {
         deepgramServiceRef.current.stopListening();
-      } else if (selectedVoiceAgent === 'webspeech' && recognitionRef.current) {
-        recognitionRef.current.stop();
       }
       setIsListening(false);
       setIsThinking(false);
     }
 
     setSelectedVoiceAgent(agent);
-    toast(`Switched to ${agent === 'deepgram' ? 'Deepgram Nova 2' : 'WebSpeech API'}`);
+    toast(`Switched to Deepgram Nova 2`);
     
     // Track agent switch
     analytics.trackVoiceAgentSwitch(previousAgent, agent);
   };
+  */
 
-  // Toggle intelligent processing mode
-  const toggleIntelligentMode = () => {
-    const newMode = !isIntelligentMode;
-    setIsIntelligentMode(newMode);
-    if (realtimeManager.current) {
-      realtimeManager.current.setEnabled(newMode);
-    }
-    toast(
-      newMode 
-        ? "🧠 AI Processing enabled - Real-time corrections with Grok" 
-        : "📝 Basic mode - Raw transcription only"
-    );
-    
-    // Track intelligent mode toggle
-    analytics.trackIntelligentModeToggle(newMode);
-  };
   
   // Handle saving transcript
   const handleSaveTranscript = async (transcriptContent: string, voiceAgent: VoiceAgent, model: LLMModel): Promise<void> => {
     const saveStartTime = Date.now();
     
     try {
-      // Use processed transcript if available
-      const contentToSave = isIntelligentMode && transcriptState 
-        ? transcriptState.processedTranscript 
-        : transcriptContent;
+      // Use current editor content
+      const contentToSave = currentEditor?.getHTML() || transcriptContent;
 
-      const { data, error } = await transcriptService.current.saveTranscript({
+      const { error } = await transcriptService.current.saveTranscript({
         content: contentToSave,
         voice_agent: voiceAgent,
         model_used: model
@@ -394,7 +273,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
       // Clear the transcript after successful save
       clearTranscript();
       if (onTranscriptSaved) {
-        onTranscriptSaved();
+        onTranscriptSaved(contentToSave);
       }
     } catch (error) {
       console.error('Error saving transcript:', error);
@@ -410,21 +289,37 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
     }
   };
 
-  // Get display transcript (processed or raw)
+  // Get display transcript (simplified)
   const getDisplayTranscript = () => {
-    if (isIntelligentMode && transcriptState) {
-      return transcriptState.processedTranscript;
+    // Use editor content if available, otherwise fall back to accumulated transcript
+    if (currentEditor) {
+      const editorHTML = currentEditor.getHTML();
+      const editorText = currentEditor.getText().trim();
+      
+      if (editorText.length > 0) {
+        return editorHTML;
+      }
     }
+    
     return accumulatedTranscript;
   };
 
-  const handleEditorChange = (content: string) => {
-    setEditorContent(content);
-    // Sync with transcript updates if needed
-    if (onTranscriptUpdate) {
-      onTranscriptUpdate(content);
+  const handleEditorChange = () => {
+    // Update editor content normally
+    
+    // Update editor content and sync with transcript updates
+    if (onTranscriptUpdate && currentEditor) {
+      const textContent = currentEditor.getText();
+      onTranscriptUpdate(textContent);
     }
   };
+
+  // Handle editor ready callback to get editor instance
+  const handleEditorReady = (editor: Editor) => {
+    setCurrentEditor(editor);
+    console.log('🎯 TipTap editor ready for voice commands');
+  };
+
 
   return (
     <div className="fixed inset-x-0 top-16 bottom-0 flex items-center justify-center z-50 pointer-events-none p-4">
@@ -433,27 +328,22 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
           <div className="flex flex-col h-full">
             {/* Header with selectors */}
             <div className="flex items-center justify-between p-3 sm:p-4 border-b border-gray-700/30 flex-shrink-0">
-              <h3 className="text-sm font-medium text-gray-300">Noteflux</h3>
+              <div className="flex items-center gap-3">
+                <h3 className="text-sm font-medium text-gray-300">Noteflux</h3>
+              </div>
               <div className="flex items-center gap-2 sm:gap-3">
-                <VoiceAgentSelector 
-                  selectedAgent={selectedVoiceAgent}
-                  onAgentChange={handleVoiceAgentChange}
-                />
-                {/* <ModelSelector 
-                  selectedModel={selectedModel}
-                  onModelChange={handleModelChange}
-                /> */}
+                {/* Right side space for future components if needed */}
               </div>
             </div>
             
             {/* Main content area */}
             <div className="flex-1 flex flex-col p-4 sm:p-6 overflow-hidden">
               {/* Center mic button and visualization */}
-              <div className="flex flex-col items-center mb-4 sm:mb-6 flex-shrink-0">
+              <div className="flex flex-col items-center mb-2 sm:mb-3 flex-shrink-0">
                 {/* Mic button with pulsing effect */}
                 <button
                   onClick={toggleListening}
-                  className={`mic-button-pro ${isListening ? 'active' : ''} mb-4 sm:mb-6`}
+                  className={`mic-button-pro ${isListening ? 'active' : ''} mb-2 sm:mb-3`}
                   aria-label={isListening ? "Stop listening" : "Start listening"}
                   id="voice-mic-button"
                   name="voice-mic-button"
@@ -471,7 +361,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
                     <div className="flex items-center justify-center">
                       <div className="pulse-ring mr-2"></div>
                       <span>
-                        Listening with {selectedVoiceAgent === 'deepgram' ? 'Deepgram Nova 2' : 'WebSpeech'}...
+                        Listening with {selectedVoiceAgent === 'deepgram' ? 'Deepgram Nova 2' : 'WebSpeech'}
                       </span>
                     </div>
                   ) : isThinking ? (
@@ -485,18 +375,17 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
                   )}
                 </div>
                 
+                
                 {/* Audio visualization - only show when listening */}
                 {isListening && (
-                  <div className="audio-visualizer mb-3 sm:mb-4 flex items-end justify-center h-8 sm:h-12 space-x-0.5 sm:space-x-1">
+                  <div className="audio-visualizer mb-2 sm:mb-3 flex items-end justify-center h-6 sm:h-8 space-x-0.5 sm:space-x-1">
                     {[...Array(12)].map((_, i) => (
                       <div 
                         key={i} 
                         className={`w-1 sm:w-1.5 rounded-full audio-bar ${
-                          isIntelligentMode 
-                            ? 'bg-purple-500/70' 
-                            : selectedVoiceAgent === 'deepgram' 
-                              ? 'bg-blue-500/70' 
-                              : 'bg-green-500/70'
+                          selectedVoiceAgent === 'deepgram' 
+                            ? 'bg-blue-500/70' 
+                            : 'bg-green-500/70'
                         }`}
                         style={{ 
                           animationDelay: `${i * 0.05}s`,
@@ -509,14 +398,16 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
               </div>
               
               {/* Tiptap Editor - positioned below mic */}
-              <div className="flex-1 overflow-hidden">
+              <div className="flex-1 overflow-y-auto mt-1">
+                
                 <TiptapEditor
                   content={getDisplayTranscript()}
                   onChange={handleEditorChange}
-                  transcript={transcript}
+                  onEditorReady={handleEditorReady}
                   isListening={isListening}
                   onVoiceCommand={(command) => {
                     console.log('Voice command received:', command);
+                    // Voice commands are now handled through the enhanced processor
                   }}
                   enableSaveFeatures={true}
                   onSave={async (content: string) => {
@@ -526,7 +417,6 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
                   onClear={() => {
                     // Clear the transcript and editor
                     clearTranscript();
-                    setEditorContent('');
                   }}
                 />
               </div>
