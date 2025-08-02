@@ -1227,7 +1227,7 @@ Return ONLY the JSON response.`;
       .filter(word => word.length > 3)
       .filter(word => !['have', 'been', 'will', 'that', 'this', 'with', 'from', 'they', 'were', 'said', 'each', 'make', 'like', 'into', 'time', 'over', 'only', 'also', 'back', 'after', 'first', 'well', 'work', 'year', 'years'].includes(word));
     
-    return [...new Set(words)];
+    return Array.from(new Set(words));
   }
 
   /**
@@ -1237,7 +1237,7 @@ Return ONLY the JSON response.`;
     if (keywords1.length === 0 || keywords2.length === 0) return 0;
     
     const intersection = keywords1.filter(word => keywords2.includes(word));
-    const union = [...new Set([...keywords1, ...keywords2])];
+    const union = Array.from(new Set(keywords1.concat(keywords2)));
     
     return intersection.length / union.length;
   }
