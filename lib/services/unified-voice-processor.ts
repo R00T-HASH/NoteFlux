@@ -1064,10 +1064,13 @@ Return ONLY the JSON response.`;
     
     // console.log('🔧 Attempting simple replacement:', { intentContent, currentText: currentText.slice(-100) });
     
-    // Enhanced time/date pattern matching
+    // Enhanced time/date pattern matching - more flexible patterns
     const timePattern = /\b(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM))\b/;
     const dayPattern = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
-    const combinedDayTimePattern = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)[,\s]+(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM))\b/i;
+    // More flexible combined pattern that handles both "Thursday 3PM" and "Friday, 5PM"
+    const combinedDayTimePattern = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:[,\s]+)(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM))\b/i;
+    // Also match existing text patterns that might be space-separated
+    const existingCombinedPattern = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM))\b/i;
     
     // Check if intent contains time correction
     const intentTimeMatch = intentContent.match(timePattern);
@@ -1090,39 +1093,48 @@ Return ONLY the JSON response.`;
       if (intentCombinedMatch) {
         // console.log('🔍 Intent has combined pattern, searching current text for ANY day+time matches...');
         
-        // Find ALL day+time matches (any day+time combination) and get the LAST one
+        // Find ALL day+time matches using both flexible patterns and get the LAST one
         const allCombinedMatches: RegExpExecArray[] = [];
-        const globalRegex = new RegExp(combinedDayTimePattern, 'gi');
-        let match;
-        while ((match = globalRegex.exec(currentText)) !== null) {
-          allCombinedMatches.push(match);
+        
+        // Check with comma/space pattern
+        const globalRegex1 = new RegExp(combinedDayTimePattern, 'gi');
+        let match1;
+        while ((match1 = globalRegex1.exec(currentText)) !== null) {
+          allCombinedMatches.push(match1);
         }
         
-        // console.log('🔍 Found combined matches in current text:', allCombinedMatches.map(m => `${m[1]}, ${m[2]}`));
+        // Check with space-only pattern (for existing "Thursday 3PM" format)
+        const globalRegex2 = new RegExp(existingCombinedPattern, 'gi');
+        let match2;
+        while ((match2 = globalRegex2.exec(currentText)) !== null) {
+          allCombinedMatches.push(match2);
+        }
+        
+        // console.log('🔍 Found combined matches in current text:', allCombinedMatches.map(m => `${m[1]} ${m[2]}`));
         
         const currentCombinedMatch = allCombinedMatches[allCombinedMatches.length - 1]; // Get last match
         
         if (currentCombinedMatch) {
-          const oldCombined = `${currentCombinedMatch[1]}, ${currentCombinedMatch[2]}`;
-          const newCombined = `${intentCombinedMatch[1]}, ${intentCombinedMatch[2]}`;
+          // Get the original format from the existing text
+          const originalFormat = currentText.substring(currentCombinedMatch.index!, currentCombinedMatch.index! + currentCombinedMatch[0].length);
           
-          // Create regex to match the LAST occurrence of combined pattern in HTML
-          const combinedPattern = this.escapeRegExp(currentCombinedMatch[1]) + '[,\\s]+' + this.escapeRegExp(currentCombinedMatch[2]);
-          const combinedRegex = new RegExp(combinedPattern + '(?!.*' + combinedPattern + ')', 'i');
+          // Use the same format for the replacement (comma or space)
+          const newCombined = originalFormat.includes(',') 
+            ? `${intentCombinedMatch[1]}, ${intentCombinedMatch[2]}`
+            : `${intentCombinedMatch[1]} ${intentCombinedMatch[2]}`;
           
-          // console.log('📅🕒 Combined day+time replacement (LAST occurrence):', { 
-          //   from: oldCombined, 
-          //   to: newCombined,
-          //   totalMatches: allCombinedMatches.length,
-          //   allMatches: allCombinedMatches.map(m => `${m[1]}, ${m[2]}`)
+          // Create regex to match the EXACT original format in HTML
+          const exactPattern = this.escapeRegExp(originalFormat);
+          const combinedRegex = new RegExp(exactPattern + '(?!.*' + exactPattern + ')', 'i');
+          
+          // console.log('📅🕒 Combined day+time replacement (preserving format):', { 
+          //   originalFormat, 
+          //   newCombined,
+          //   totalMatches: allCombinedMatches.length
           // });
-          // console.log('🔧 HTML before replacement:', updatedHTML);
-          // console.log('🔧 Regex pattern:', combinedRegex.source);
           
           updatedHTML = updatedHTML.replace(combinedRegex, newCombined);
           replacementMade = true;
-          
-          // console.log('🔧 HTML after replacement:', updatedHTML);
         } else {
           // console.log('❌ No combined day+time matches found in current text to replace');
         }

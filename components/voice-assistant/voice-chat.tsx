@@ -356,7 +356,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
                 </button>
 
                 {/* Status text */}
-                <div className="text-xs sm:text-sm text-gray-400 mb-3 sm:mb-4 text-center px-2">
+                <div className="text-xs sm:text-sm text-gray-400 mb-1 sm:mb-2 text-center px-2">
                   {isListening ? (
                     <div className="flex items-center justify-center">
                       <div className="pulse-ring mr-2"></div>
@@ -378,7 +378,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
                 
                 {/* Audio visualization - only show when listening */}
                 {isListening && (
-                  <div className="audio-visualizer mb-2 sm:mb-3 flex items-end justify-center h-6 sm:h-8 space-x-0.5 sm:space-x-1">
+                  <div className="audio-visualizer mb-1 sm:mb-2 flex items-end justify-center h-6 sm:h-8 space-x-0.5 sm:space-x-1">
                     {[...Array(12)].map((_, i) => (
                       <div 
                         key={i} 
