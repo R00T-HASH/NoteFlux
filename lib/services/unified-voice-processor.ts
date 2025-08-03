@@ -409,7 +409,7 @@ Output: {"type": "command", "content": "project update", "editorHTML": "<h1>proj
 Input: "h2 meeting notes" OR "h 2 meeting notes"
 Output: {"type": "command", "content": "meeting notes", "editorHTML": "<h2>meeting notes</h2>", "confidence": 0.9}
 
-Input: "bold text important notice"
+Input: "make this bold important notice"
 Output: {"type": "command", "content": "important notice", "editorHTML": "<p><strong>important notice</strong></p>", "confidence": 0.9}
 
 Input: "h1" OR "h 1" OR "h1 heading" OR "h 1 heading" (without content)
@@ -458,6 +458,12 @@ Output: {"type": "text", "content": "Manish", "editorHTML": null, "confidence": 
 TEXT EXAMPLES:
 Input: "I had a great meeting today with the engineering team"
 Output: {"type": "text", "content": "I had a great meeting today with the engineering team", "editorHTML": null, "confidence": 0.9}
+
+Input: "Schedule a meeting on Friday at 3PM"
+Output: {"type": "text", "content": "Schedule a meeting on Friday at 3PM", "editorHTML": null, "confidence": 0.9}
+
+Input: "The project deadline is Monday"
+Output: {"type": "text", "content": "The project deadline is Monday", "editorHTML": null, "confidence": 0.9}
 
 Return ONLY the JSON response.`;
   }
@@ -1042,44 +1048,114 @@ Return ONLY the JSON response.`;
     // Enhanced time/date pattern matching
     const timePattern = /\b(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM))\b/;
     const dayPattern = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
+    const combinedDayTimePattern = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)[,\s]+(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM))\b/i;
     
     // Check if intent contains time correction
     const intentTimeMatch = intentContent.match(timePattern);
     const intentDayMatch = intentContent.match(dayPattern);
+    const intentCombinedMatch = intentContent.match(combinedDayTimePattern);
     
-    if (intentTimeMatch || intentDayMatch) {
+    // console.log('🔍 Pattern matching:', { 
+    //   intentContent, 
+    //   intentTimeMatch: intentTimeMatch?.[1], 
+    //   intentDayMatch: intentDayMatch?.[1],
+    //   intentCombinedMatch: intentCombinedMatch ? `${intentCombinedMatch[1]}, ${intentCombinedMatch[2]}` : null,
+    //   currentTextSample: currentText.slice(-200)
+    // });
+    
+    if (intentTimeMatch || intentDayMatch || intentCombinedMatch) {
       let updatedHTML = currentHTML;
       let replacementMade = false;
       
-      // Replace time if both intent and current text have time
-      if (intentTimeMatch) {
-        const currentTimeMatch = currentText.match(timePattern);
-        if (currentTimeMatch) {
-          const oldTime = currentTimeMatch[1];
-          const newTime = intentTimeMatch[1];
+      // Handle combined day+time pattern first (most specific)
+      if (intentCombinedMatch) {
+        // console.log('🔍 Intent has combined pattern, searching current text for ANY day+time matches...');
+        
+        // Find ALL day+time matches (any day+time combination) and get the LAST one
+        const allCombinedMatches: RegExpExecArray[] = [];
+        const globalRegex = new RegExp(combinedDayTimePattern, 'gi');
+        let match;
+        while ((match = globalRegex.exec(currentText)) !== null) {
+          allCombinedMatches.push(match);
+        }
+        
+        // console.log('🔍 Found combined matches in current text:', allCombinedMatches.map(m => `${m[1]}, ${m[2]}`));
+        
+        const currentCombinedMatch = allCombinedMatches[allCombinedMatches.length - 1]; // Get last match
+        
+        if (currentCombinedMatch) {
+          const oldCombined = `${currentCombinedMatch[1]}, ${currentCombinedMatch[2]}`;
+          const newCombined = `${intentCombinedMatch[1]}, ${intentCombinedMatch[2]}`;
           
-          // Create regex that matches the exact time pattern in HTML
-          const timeRegex = new RegExp(this.escapeRegExp(oldTime), 'gi');
-          updatedHTML = updatedHTML.replace(timeRegex, newTime);
+          // Create regex to match the LAST occurrence of combined pattern in HTML
+          const combinedPattern = this.escapeRegExp(currentCombinedMatch[1]) + '[,\\s]+' + this.escapeRegExp(currentCombinedMatch[2]);
+          const combinedRegex = new RegExp(combinedPattern + '(?!.*' + combinedPattern + ')', 'i');
+          
+          // console.log('📅🕒 Combined day+time replacement (LAST occurrence):', { 
+          //   from: oldCombined, 
+          //   to: newCombined,
+          //   totalMatches: allCombinedMatches.length,
+          //   allMatches: allCombinedMatches.map(m => `${m[1]}, ${m[2]}`)
+          // });
+          // console.log('🔧 HTML before replacement:', updatedHTML);
+          // console.log('🔧 Regex pattern:', combinedRegex.source);
+          
+          updatedHTML = updatedHTML.replace(combinedRegex, newCombined);
           replacementMade = true;
           
-          // console.log('🕒 Time replacement:', { from: oldTime, to: newTime });
+          // console.log('🔧 HTML after replacement:', updatedHTML);
+        } else {
+          // console.log('❌ No combined day+time matches found in current text to replace');
         }
       }
-      
-      // Replace day if both intent and current text have day
-      if (intentDayMatch) {
-        const currentDayMatch = currentText.match(dayPattern);
-        if (currentDayMatch) {
-          const oldDay = currentDayMatch[1];
-          const newDay = intentDayMatch[1];
+      // Only try individual replacements if combined didn't work
+      else {
+        // Replace time if both intent and current text have time
+        if (intentTimeMatch) {
+          // Find ALL time matches and get the LAST one (most recent)
+          const allTimeMatches: RegExpExecArray[] = [];
+          const globalTimeRegex = new RegExp(timePattern, 'g');
+          let timeMatch;
+          while ((timeMatch = globalTimeRegex.exec(currentText)) !== null) {
+            allTimeMatches.push(timeMatch);
+          }
+          const currentTimeMatch = allTimeMatches[allTimeMatches.length - 1]; // Get last match
           
-          // Create regex that matches the exact day pattern in HTML
-          const dayRegex = new RegExp(this.escapeRegExp(oldDay), 'gi');
-          updatedHTML = updatedHTML.replace(dayRegex, newDay);
-          replacementMade = true;
+          if (currentTimeMatch) {
+            const oldTime = currentTimeMatch[1];
+            const newTime = intentTimeMatch[1];
+            
+            // Create regex that matches the LAST occurrence of this time pattern
+            const timeRegex = new RegExp(this.escapeRegExp(oldTime) + '(?!.*' + this.escapeRegExp(oldTime) + ')', 'i');
+            updatedHTML = updatedHTML.replace(timeRegex, newTime);
+            replacementMade = true;
+            
+            // console.log('🕒 Time replacement (last occurrence):', { from: oldTime, to: newTime });
+          }
+        }
+        
+        // Replace day if both intent and current text have day
+        if (intentDayMatch) {
+          // Find ALL day matches and get the LAST one (most recent)
+          const allDayMatches: RegExpExecArray[] = [];
+          const globalDayRegex = new RegExp(dayPattern, 'gi');
+          let dayMatch;
+          while ((dayMatch = globalDayRegex.exec(currentText)) !== null) {
+            allDayMatches.push(dayMatch);
+          }
+          const currentDayMatch = allDayMatches[allDayMatches.length - 1]; // Get last match
           
-          // console.log('📅 Day replacement:', { from: oldDay, to: newDay });
+          if (currentDayMatch) {
+            const oldDay = currentDayMatch[1];
+            const newDay = intentDayMatch[1];
+            
+            // Create regex that matches the LAST occurrence of this day pattern
+            const dayRegex = new RegExp(this.escapeRegExp(oldDay) + '(?!.*' + this.escapeRegExp(oldDay) + ')', 'gi');
+            updatedHTML = updatedHTML.replace(dayRegex, newDay);
+            replacementMade = true;
+            
+            // console.log('📅 Day replacement (last occurrence):', { from: oldDay, to: newDay });
+          }
         }
       }
       
