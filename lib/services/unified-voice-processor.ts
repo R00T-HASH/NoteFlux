@@ -204,9 +204,9 @@ export class UnifiedVoiceProcessor {
         // });
         
         if (!currentText) {
-          // console.log('📝 No existing content to modify - using extracted content or context');
+          // console.log('📝 No existing content to modify - checking for unprocessed context');
           
-          // Check if recent context should be included
+          // ENHANCED: Check if recent context should be included - more aggressive detection
           const shouldIncludeContext = this.hasUnprocessedContextForCorrection(transcript, recentContext);
           
           if (shouldIncludeContext) {
@@ -215,7 +215,15 @@ export class UnifiedVoiceProcessor {
             return this.formatAsText(contextualContent);
           }
           
-          // Final fallback: just the intent content
+          // NEW: Also check if this looks like a standalone correction that should be ignored
+          // If it's clearly a correction attempt but we have no context, ignore it
+          const isStandaloneCorrection = this.isStandaloneCorrectionAttempt(transcript);
+          if (isStandaloneCorrection) {
+            // console.log('⚠️ Standalone correction with no context - ignoring');
+            return '';
+          }
+          
+          // Final fallback: just the intent content (only if it looks like real content)
           // console.log('⚠️ Using intent content as fallback:', result.content);
           return this.formatAsText(result.content);
         }
@@ -1339,6 +1347,27 @@ Return ONLY the JSON response.`;
     return isCompleteSentence;
   }
 
+  /**
+   * Check if this is a standalone correction attempt that should be ignored
+   * This prevents appending correction values when there's no content to correct
+   */
+  private isStandaloneCorrectionAttempt(transcript: string): boolean {
+    // Must have correction indicator
+    const hasCorrection = /sorry|actually|change|make that|replace|fix|correction/i.test(transcript);
+    if (!hasCorrection) return false;
+    
+    // Extract the correction value
+    const correctionValue = this.extractCorrectionFromTranscript(transcript);
+    if (!correctionValue) return false;
+    
+    // If the correction value is very short and looks like a replacement value (time, name, number)
+    // and we have no context, it's likely a standalone correction attempt
+    const isShortReplacementValue = correctionValue.length < 15 && 
+      /^(?:\d+|[A-Z][a-z]+|\d{1,2}:\d{2}|monday|tuesday|wednesday|thursday|friday|saturday|sunday|[A-Z][a-z]+\s*\d*\s*(?:am|pm)?)$/i.test(correctionValue.trim());
+    
+    return isShortReplacementValue;
+  }
+
   private extractFullContentFromIntent(transcript: string): string {
     // When there's no existing content but we have an intent like:
     // "I have to schedule a meeting on Friday, 3PM. Sorry, Saturday, 5PM"
@@ -1707,20 +1736,33 @@ Return ONLY the JSON response.`;
     
     // Check if recent context has substantial content that looks like it should be preserved
     const contextLength = recentContext.length;
-    const hasSubstantialContext = contextLength > 20;
+    const hasSubstantialContext = contextLength > 15; // Lowered threshold
     
-    // Look for sentence patterns that indicate unprocessed content
-    const hasActionPattern = /\b(I have|I need|I want|schedule|meeting|send|mail|call|visit)\b/i.test(recentContext);
+    // Look for sentence patterns that indicate unprocessed content - EXPANDED
+    const hasActionPattern = /\b(I have|I need|I want|schedule|meeting|send|mail|call|visit|pay|buy|remind|set|create|make|write|note|task|todo|appointment|phone|email|text|message)\b/i.test(recentContext);
     
-    // console.log('🔍 Correction context check:', {
-    //   hasCorrection,
-    //   hasSubstantialContext,
-    //   hasActionPattern,
-    //   contextLength,
-    //   shouldInclude: hasCorrection && hasSubstantialContext && hasActionPattern
-    // });
+    // NEW: Also check for time/date patterns that suggest this is about scheduling/planning
+    const hasTimePattern = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}:\d{2}|\d{1,2}\s*(?:am|pm)|today|tomorrow|next|this|week|month)\b/i.test(recentContext);
     
-    return hasCorrection && hasSubstantialContext && hasActionPattern;
+    // NEW: Check for common nouns that suggest actionable content
+    const hasNounPattern = /\b(bill|grocery|groceries|appointment|meeting|task|reminder|note|email|call|visit|trip|event)\b/i.test(recentContext);
+    
+    // More liberal matching - if we have correction + substantial context + any relevant pattern
+    const shouldInclude = hasCorrection && hasSubstantialContext && (hasActionPattern || hasTimePattern || hasNounPattern);
+    
+    console.log('🔍 Enhanced correction context check:', {
+      hasCorrection,
+      hasSubstantialContext,
+      hasActionPattern,
+      hasTimePattern, 
+      hasNounPattern,
+      contextLength,
+      recentContext: recentContext.slice(-100),
+      transcript: transcript.slice(0, 50),
+      shouldInclude
+    });
+    
+    return shouldInclude;
   }
 
   /**
