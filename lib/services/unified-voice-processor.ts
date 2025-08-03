@@ -749,6 +749,13 @@ Return ONLY the JSON response.`;
       return '';
     }
     
+    // NEW: Try sentence-level replacement for pause corrections
+    const sentenceReplacementResult = this.performSentenceReplacement(intentContent, editor);
+    if (sentenceReplacementResult === '') {
+      // console.log('✅ Sentence replacement succeeded');
+      return '';
+    }
+    
     // Final fallback: ONLY add as new text if this looks like a continuation, not a correction
     if (this.looksLikeContinuation(intentContent, recentContext)) {
       // console.log('📝 Treating as continuation rather than failed correction');
@@ -1326,6 +1333,101 @@ Return ONLY the JSON response.`;
   }
 
   /**
+   * Replace the last sentence when user makes a correction after a pause
+   * This handles cases like "Pay the electricity bill" -> pause -> "Buy grocery"
+   */
+  private performSentenceReplacement(intentContent: string, editor: Editor): string {
+    const currentText = editor.getText();
+    const currentHTML = editor.getHTML();
+    
+    if (!currentText.trim()) {
+      return intentContent; // No content to replace
+    }
+    
+    // Check if the intent content looks like a replacement sentence/phrase
+    const looksLikeReplacement = this.isLikelyReplacementContent(intentContent);
+    if (!looksLikeReplacement) {
+      return intentContent; // Not a replacement
+    }
+    
+    // Split text into sentences (by periods, exclamation marks, question marks, or line breaks)
+    const sentences = currentText.split(/[.!?\n]+/).filter(s => s.trim().length > 0);
+    
+    if (sentences.length === 0) {
+      return intentContent; // No sentences to replace
+    }
+    
+    // Get the last sentence and its position in the original text
+    const lastSentence = sentences[sentences.length - 1].trim();
+    const lastSentenceIndex = currentText.lastIndexOf(lastSentence);
+    
+    if (lastSentenceIndex === -1) {
+      return intentContent; // Could not find sentence position
+    }
+    
+    // Replace the last sentence with the intent content
+    const beforeLastSentence = currentText.substring(0, lastSentenceIndex);
+    const afterLastSentence = currentText.substring(lastSentenceIndex + lastSentence.length);
+    
+    // Build the new text
+    let newText = beforeLastSentence;
+    
+    // Add proper spacing
+    if (newText.trim() && !newText.endsWith(' ') && !newText.endsWith('\n')) {
+      // If there's content before and it doesn't end with space/newline, add a space or newline
+      newText += beforeLastSentence.includes('\n') ? '\n' : ' ';
+    }
+    
+    newText += intentContent;
+    
+    // Preserve any trailing content
+    if (afterLastSentence.trim()) {
+      newText += afterLastSentence;
+    }
+    
+    // Update the editor
+    const newHTML = this.formatAsText(newText);
+    editor.commands.clearContent();
+    editor.commands.insertContent(newHTML);
+    
+    // console.log('✅ Sentence replacement performed:', { 
+    //   lastSentence, 
+    //   intentContent, 
+    //   beforeLastSentence: beforeLastSentence.slice(-20),
+    //   afterLastSentence: afterLastSentence.slice(0, 20)
+    // });
+    
+    return ''; // Success - content was replaced
+  }
+  
+  /**
+   * Determine if content looks like it should replace a sentence rather than append
+   */
+  private isLikelyReplacementContent(content: string): boolean {
+    const trimmed = content.trim();
+    
+    // Task/action phrases (like "Buy grocery", "Pay the electricity bill")
+    const taskPatterns = [
+      /^(buy|pay|schedule|call|send|email|write|read|watch|listen|visit|go|come|take|give|make|do|get|set|fix|clean|wash|cook|eat|drink|sleep|wake|work|study|learn|teach|help|ask|tell|say|speak|talk|walk|run|drive|travel|book|cancel|confirm|check|review|update|delete|save|print|copy|paste|cut|move|rename|search|find|open|close|start|stop|pause|play|record|upload|download|install|uninstall|login|logout|register|subscribe|unsubscribe|like|share|comment|post|publish|edit|draft|submit|approve|reject|accept|decline|invite|join|leave|quit|exit|enter|return|back|forward|next|previous|first|last|begin|end|finish|complete|done)\s+/i,
+    ];
+    
+    // Time/date specifications (like "Friday, 5PM", "Thursday, 3PM")
+    const timePatterns = [
+      /^(monday|tuesday|wednesday|thursday|friday|saturday|sunday)[,\s]+\d{1,2}(?::\d{2})?\s*(?:am|pm)?$/i,
+      /^\d{1,2}(?::\d{2})?\s*(?:am|pm)[,\s]+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i,
+    ];
+    
+    // Short phrases that are likely corrections
+    const shortPhrase = trimmed.split(/\s+/).length <= 4 && trimmed.length <= 30;
+    
+    // Check patterns
+    const matchesTaskPattern = taskPatterns.some(pattern => pattern.test(trimmed));
+    const matchesTimePattern = timePatterns.some(pattern => pattern.test(trimmed));
+    
+    return matchesTaskPattern || matchesTimePattern || shortPhrase;
+  }
+
+  /**
    * Determine if the intent content looks like a continuation rather than a correction
    * This helps distinguish between failed corrections and legitimate new content
    */
@@ -1335,16 +1437,34 @@ Return ONLY the JSON response.`;
       return false;
     }
     
+    // Enhanced pattern to catch common correction values that should not be treated as continuations
+    const correctionPatterns = [
+      /^(monday|tuesday|wednesday|thursday|friday|saturday|sunday)[,\s]+\d{1,2}(?::\d{2})?\s*(?:am|pm)?$/i, // Day + time
+      /^\d{1,2}(?::\d{2})?\s*(?:am|pm)[,\s]+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i, // Time + day  
+      /^(monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i, // Just day
+      /^\d{1,2}(?::\d{2})?\s*(?:am|pm)$/i, // Just time
+      /^[A-Z][a-z]+\s+[A-Z][a-z]+$/i, // Two capitalized words (like "Buy grocery")
+      /^(buy|pay|schedule|call|send|email)\s+/i, // Action words + object
+    ];
+    
+    // If it matches any correction pattern, it's not a continuation
+    if (correctionPatterns.some(pattern => pattern.test(intentContent.trim()))) {
+      return false;
+    }
+    
     // If intent content starts with common continuation words, it's likely a continuation
     const continuationMarkers = /^(and|also|then|next|furthermore|additionally|moreover|plus)/i;
     if (continuationMarkers.test(intentContent.trim())) {
       return true;
     }
     
-    // If intent content is a complete sentence, it's likely a continuation
-    const isCompleteSentence = intentContent.includes(' ') && intentContent.length > 15;
+    // Only treat as continuation if it's a complete sentence with proper sentence structure
+    // (contains a verb and is not just a phrase)
+    const hasProperSentenceStructure = /\b(is|are|was|were|will|would|should|could|can|have|has|had|do|does|did)\b/i.test(intentContent);
+    const isLongEnough = intentContent.length > 20;
+    const hasMultipleWords = intentContent.split(/\s+/).length >= 4;
     
-    return isCompleteSentence;
+    return hasProperSentenceStructure && isLongEnough && hasMultipleWords;
   }
 
   /**
@@ -2095,6 +2215,14 @@ Return ONLY the JSON response.`;
     
     const listTag = this.context.listMode.type;
     const listHTML = `<${listTag}>${this.context.listMode.items.map(item => `<li>${item}</li>`).join('')}</${listTag}>`;
+    
+    // CRUCIAL FIX: Add list items to previous chunks before clearing for correction context
+    this.context.previousChunks.push(...this.context.listMode.items);
+    
+    // Keep only last 5 chunks to avoid memory bloat
+    if (this.context.previousChunks.length > 5) {
+      this.context.previousChunks = this.context.previousChunks.slice(-5);
+    }
     
     // Reset list mode
     this.context.listMode = {
