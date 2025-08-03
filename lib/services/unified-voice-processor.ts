@@ -708,6 +708,12 @@ Return ONLY the JSON response.`;
       return this.addCorrectedContextToEditor(intentContent, recentContext);
     }
     
+    // If there's no text in the editor, don't try to replace - return empty to ignore the correction
+    if (!currentText.trim()) {
+      // console.log('📝 No existing content to correct - ignoring correction attempt');
+      return '';
+    }
+    
     // Try simple replacement patterns first for time/date corrections
     const simpleReplacementResult = this.performSimpleReplacement(intentContent, editor);
     if (simpleReplacementResult === '') {
@@ -728,9 +734,22 @@ Return ONLY the JSON response.`;
       }
     }
     
-    // Final fallback: just add the intent content
-    // console.log('⚠️ All replacement attempts failed, adding as new text');
-    return this.formatAsText(intentContent);
+    // Enhanced fallback: try intelligent word/phrase replacement
+    const intelligentReplacementResult = this.performIntelligentReplacement(intentContent, editor);
+    if (intelligentReplacementResult === '') {
+      // console.log('✅ Intelligent replacement succeeded');
+      return '';
+    }
+    
+    // Final fallback: ONLY add as new text if this looks like a continuation, not a correction
+    if (this.looksLikeContinuation(intentContent, recentContext)) {
+      // console.log('📝 Treating as continuation rather than failed correction');
+      return this.formatAsText(intentContent);
+    }
+    
+    // If it's clearly a correction attempt but we couldn't find what to replace, ignore it
+    // console.log('⚠️ Correction attempt failed - ignoring to prevent duplicate text');
+    return '';
   }
 
   private async getReplacementFromGrok(intentContent: string, recentContext: string, currentText: string): Promise<any> {
@@ -1196,6 +1215,118 @@ Return ONLY the JSON response.`;
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
+  /**
+   * Intelligent replacement method for simple word/phrase corrections
+   * Handles cases where regex patterns fail but we can still find similar content
+   */
+  private performIntelligentReplacement(intentContent: string, editor: Editor): string {
+    const currentText = editor.getText();
+    const currentHTML = editor.getHTML();
+    
+    // console.log('🧠 Attempting intelligent replacement:', { intentContent, currentText: currentText.slice(-100) });
+    
+    // Strategy 1: Find the most recent word/phrase that's similar to the intent
+    const words = currentText.split(/\s+/).filter(w => w.length > 0);
+    if (words.length === 0) return intentContent;
+    
+    // Look for numbers, names, or time patterns in both current text and intent
+    const intentNumbers = intentContent.match(/\d+/g) || [];
+    const intentNames = intentContent.match(/\b[A-Z][a-z]+\b/g) || [];
+    const intentTimes = intentContent.match(/\b\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)\b/g) || [];
+    const intentDays = intentContent.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi) || [];
+    
+    // Strategy 2: Replace the last similar pattern in the text
+    let replacementMade = false;
+    let updatedHTML = currentHTML;
+    
+    // Replace numbers (last number with intent number)
+    if (intentNumbers.length > 0) {
+      const intentNumber = intentNumbers[intentNumbers.length - 1];
+      const lastNumberMatch = currentText.match(/(\d+)(?!.*\d)/);
+      if (lastNumberMatch) {
+        const oldNumber = lastNumberMatch[1];
+        const numberRegex = new RegExp(this.escapeRegExp(oldNumber) + '(?!.*' + this.escapeRegExp(oldNumber) + ')', 'g');
+        updatedHTML = updatedHTML.replace(numberRegex, intentNumber);
+        replacementMade = true;
+        // console.log('🔢 Intelligent number replacement:', { from: oldNumber, to: intentNumber });
+      }
+    }
+    
+    // Replace names (last capitalized word with intent name)
+    if (!replacementMade && intentNames.length > 0) {
+      const intentName = intentNames[intentNames.length - 1];
+      const lastNameMatch = currentText.match(/\b([A-Z][a-z]+)\b(?!.*\b[A-Z][a-z]+\b)/);
+      if (lastNameMatch) {
+        const oldName = lastNameMatch[1];
+        const nameRegex = new RegExp('\\b' + this.escapeRegExp(oldName) + '\\b(?!.*\\b' + this.escapeRegExp(oldName) + '\\b)', 'g');
+        updatedHTML = updatedHTML.replace(nameRegex, intentName);
+        replacementMade = true;
+        // console.log('👤 Intelligent name replacement:', { from: oldName, to: intentName });
+      }
+    }
+    
+    // Replace times (last time with intent time)
+    if (!replacementMade && intentTimes.length > 0) {
+      const intentTime = intentTimes[intentTimes.length - 1];
+      const timePattern = /\b(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM))\b/g;
+      const timeMatches = Array.from(currentText.matchAll(timePattern));
+      if (timeMatches.length > 0) {
+        const lastTimeMatch = timeMatches[timeMatches.length - 1];
+        const oldTime = lastTimeMatch[1];
+        const timeRegex = new RegExp(this.escapeRegExp(oldTime) + '(?!.*' + this.escapeRegExp(oldTime) + ')', 'g');
+        updatedHTML = updatedHTML.replace(timeRegex, intentTime);
+        replacementMade = true;
+        // console.log('🕐 Intelligent time replacement:', { from: oldTime, to: intentTime });
+      }
+    }
+    
+    // Replace days (last day with intent day)
+    if (!replacementMade && intentDays.length > 0) {
+      const intentDay = intentDays[intentDays.length - 1];
+      const dayPattern = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi;
+      const dayMatches = Array.from(currentText.matchAll(dayPattern));
+      if (dayMatches.length > 0) {
+        const lastDayMatch = dayMatches[dayMatches.length - 1];
+        const oldDay = lastDayMatch[1];
+        const dayRegex = new RegExp('\\b' + this.escapeRegExp(oldDay) + '\\b(?!.*\\b' + this.escapeRegExp(oldDay) + '\\b)', 'gi');
+        updatedHTML = updatedHTML.replace(dayRegex, intentDay);
+        replacementMade = true;
+        // console.log('📅 Intelligent day replacement:', { from: oldDay, to: intentDay });
+      }
+    }
+    
+    if (replacementMade) {
+      editor.commands.clearContent();
+      editor.commands.insertContent(updatedHTML);
+      return ''; // Success - content was replaced
+    }
+    
+    // No intelligent replacement possible
+    return intentContent; // Return the intent content to indicate failure
+  }
+
+  /**
+   * Determine if the intent content looks like a continuation rather than a correction
+   * This helps distinguish between failed corrections and legitimate new content
+   */
+  private looksLikeContinuation(intentContent: string, _recentContext: string): boolean {
+    // If intent content is very short and looks like a correction value, it's probably not a continuation
+    if (intentContent.length < 10 && /^(?:\d+|[A-Z][a-z]+|\d{1,2}:\d{2}|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(intentContent.trim())) {
+      return false;
+    }
+    
+    // If intent content starts with common continuation words, it's likely a continuation
+    const continuationMarkers = /^(and|also|then|next|furthermore|additionally|moreover|plus)/i;
+    if (continuationMarkers.test(intentContent.trim())) {
+      return true;
+    }
+    
+    // If intent content is a complete sentence, it's likely a continuation
+    const isCompleteSentence = intentContent.includes(' ') && intentContent.length > 15;
+    
+    return isCompleteSentence;
+  }
+
   private extractFullContentFromIntent(transcript: string): string {
     // When there's no existing content but we have an intent like:
     // "I have to schedule a meeting on Friday, 3PM. Sorry, Saturday, 5PM"
@@ -1274,7 +1405,7 @@ Return ONLY the JSON response.`;
    * Determine if the intent/correction is about different content than what's currently in the editor
    * This prevents incorrectly modifying existing content when we should be adding new content
    */
-  private isIntentAboutDifferentContent(transcript: string, recentContext: string, currentEditorText: string): boolean {
+  private isIntentAboutDifferentContent(_transcript: string, recentContext: string, currentEditorText: string): boolean {
     // console.log('🔍 Checking if intent is about different content:', {
     //   transcript: transcript.slice(0, 50) + '...',
     //   currentEditor: currentEditorText.slice(0, 50) + '...',
@@ -1534,7 +1665,6 @@ Return ONLY the JSON response.`;
     
     // Check if we have a correction pattern within the same context
     const correctionPattern = /(.+?)(?:\.\s*)?(?:sorry|actually|make that|change|correction)[,\s]+(.+)/i;
-    const correctionMatch = allContext.match(correctionPattern);
     
     const shouldInclude = hasCorrection && (hasTimeReference || hasNumberReference || hasNameReference) && hasActionVerb;
     
@@ -1544,7 +1674,7 @@ Return ONLY the JSON response.`;
     //   hasNumberReference,
     //   hasNameReference,
     //   hasActionVerb,
-    //   hasCorrectionPattern: !!correctionMatch,
+    //   hasCorrectionPattern: !!correctionPattern,
     //   context: allContext.slice(-100),
     //   shouldInclude
     // });
