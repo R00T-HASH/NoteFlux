@@ -18,6 +18,7 @@ interface VoiceContext {
     active: boolean;
     items: string[];
     startTime: number;
+    type: 'ul' | 'ol'; // unordered (bullet) or ordered (numbered)
   };
   continuousText: {
     accumulated: string;
@@ -67,7 +68,8 @@ export class UnifiedVoiceProcessor {
       listMode: {
         active: false,
         items: [],
-        startTime: 0
+        startTime: 0,
+        type: 'ul'
       },
       continuousText: {
         accumulated: '',
@@ -103,13 +105,13 @@ export class UnifiedVoiceProcessor {
 
     // Check if we're in heading mode first
     if (this.context.headingMode.active) {
-      console.log('📝 Already in heading mode, processing input:', transcript);
+      // console.log('📝 Already in heading mode, processing input:', transcript);
       
       // Only process final transcripts in heading mode to avoid conflicts
       if (data.isFinal || data.speechFinal) {
         return this.handleHeadingModeInput(transcript);
       } else {
-        console.log('📝 Ignoring interim transcript in heading mode:', transcript);
+        // console.log('📝 Ignoring interim transcript in heading mode:', transcript);
         return '';
       }
     }
@@ -118,7 +120,7 @@ export class UnifiedVoiceProcessor {
     if (this.context.listMode.active) {
       // If utterance ended, finalize the list immediately
       if (data.utteranceEnd && this.context.listMode.items.length > 0) {
-        console.log('🎤 Utterance ended - finalizing list immediately');
+        // console.log('🎤 Utterance ended - finalizing list immediately');
         return this.finalizeList();
       }
       return this.handleListModeInput(transcript);
@@ -129,7 +131,7 @@ export class UnifiedVoiceProcessor {
     
     switch (result.type) {
       case 'command':
-        console.log('🎯 Command detected:', transcript);
+        // console.log('🎯 Command detected:', transcript);
         
         // Reset continuous text accumulation when a command is processed
         this.context.continuousText.accumulated = '';
@@ -156,13 +158,13 @@ export class UnifiedVoiceProcessor {
             startTime: Date.now()
           };
           
-          console.log(`📝 Starting heading mode (H${level}) from fallback`);
+          // console.log(`📝 Starting heading mode (H${level}) from fallback`);
           return '';
         }
         
         // IMPORTANT: If we're already in list mode, treat commands as list items instead of separate commands
         if (this.context.listMode.active) {
-          console.log('📋 In list mode - treating command as list item:', result.content);
+          // console.log('📋 In list mode - treating command as list item:', result.content);
           return this.handleListModeInput(result.content || transcript);
         }
         
@@ -176,7 +178,7 @@ export class UnifiedVoiceProcessor {
         }
         
       case 'intent':
-        console.log('🔄 Intent detected:', transcript);
+        // console.log('🔄 Intent detected:', transcript);
         
         // Reset continuous text accumulation when an intent is processed
         this.context.continuousText.accumulated = '';
@@ -187,7 +189,7 @@ export class UnifiedVoiceProcessor {
         
         // If we successfully extracted a complete corrected sentence, use it
         if (fullContent && fullContent.trim() && fullContent !== transcript && fullContent !== result.content) {
-          console.log('✅ Successfully extracted full corrected sentence:', fullContent);
+          // console.log('✅ Successfully extracted full corrected sentence:', fullContent);
           return this.formatAsText(fullContent);
         }
         
@@ -195,26 +197,26 @@ export class UnifiedVoiceProcessor {
         const currentText = editor.getText().trim();
         const recentContext = this.context.previousChunks.slice(-3).join(' ');
         
-        console.log('🔍 Intent processing context:', {
-          currentTextLength: currentText.length,
-          recentContext: recentContext.slice(-100),
-          intentContent: result.content
-        });
+        // console.log('🔍 Intent processing context:', {
+        //   currentTextLength: currentText.length,
+        //   recentContext: recentContext.slice(-100),
+        //   intentContent: result.content
+        // });
         
         if (!currentText) {
-          console.log('📝 No existing content to modify - using extracted content or context');
+          // console.log('📝 No existing content to modify - using extracted content or context');
           
           // Check if recent context should be included
           const shouldIncludeContext = this.hasUnprocessedContextForCorrection(transcript, recentContext);
           
           if (shouldIncludeContext) {
-            console.log('📝 Including unprocessed context with correction');
+            // console.log('📝 Including unprocessed context with correction');
             const contextualContent = this.buildCorrectedContentFromContext(transcript, recentContext);
             return this.formatAsText(contextualContent);
           }
           
           // Final fallback: just the intent content
-          console.log('⚠️ Using intent content as fallback:', result.content);
+          // console.log('⚠️ Using intent content as fallback:', result.content);
           return this.formatAsText(result.content);
         }
         
@@ -222,12 +224,12 @@ export class UnifiedVoiceProcessor {
         const isAboutDifferentContent = this.isIntentAboutDifferentContent(transcript, recentContext, currentText);
         
         if (isAboutDifferentContent) {
-          console.log('🆕 Intent is about different content - adding corrected content');
+          // console.log('🆕 Intent is about different content - adding corrected content');
           
           // Try to build from context
           const contextualContent = this.buildCorrectedContentFromContext(transcript, recentContext);
           if (contextualContent && contextualContent !== result.content) {
-            console.log('✅ Adding contextual content:', contextualContent);
+            // console.log('✅ Adding contextual content:', contextualContent);
             return this.formatAsText(contextualContent);
           }
         }
@@ -237,17 +239,17 @@ export class UnifiedVoiceProcessor {
         
       case 'text':
       default:
-        console.log('📝 Regular text:', transcript);
+        // console.log('📝 Regular text:', transcript);
         // Handle empty content (like "Sorry." alone)
         if (!result.content || result.content.trim() === '') {
-          console.log('📝 Empty content - waiting for correction');
+          // console.log('📝 Empty content - waiting for correction');
           return '';
         }
         
         // Clean up content to remove "Sorry" when it appears to be preparing for correction
         let cleanedContent = this.cleanContentForCorrection(result.content);
         if (!cleanedContent.trim()) {
-          console.log('📝 Content cleaned to empty - waiting for correction');
+          // console.log('📝 Content cleaned to empty - waiting for correction');
           return '';
         }
         
@@ -306,7 +308,7 @@ export class UnifiedVoiceProcessor {
       
       try {
         const parsed = JSON.parse(content);
-        console.log('🤖 Grok API Response:', parsed);
+        // console.log('🤖 Grok API Response:', parsed);
         
         return {
           type: parsed.type || 'text',
@@ -316,7 +318,7 @@ export class UnifiedVoiceProcessor {
         };
       } catch (parseError) {
         console.error('Failed to parse Grok response:', { content, parseError });
-        console.log('🔄 Falling back to local processing');
+        // console.log('🔄 Falling back to local processing');
         return this.fallbackProcessing(transcript);
       }
 
@@ -347,7 +349,7 @@ SPECIAL RULE - If list mode is active:
    - Single words or phrases are likely list items, not separate commands
 
 1. COMMAND - User wants to format/structure content:
-   - Contains: "create list", "make list", "bullet list", "numbered list", "task list"
+   - Contains: "create list", "make list", "bullet list", "numbered list", "create numbered list", "ordered list", "task list"
    - Contains: "make heading", "create heading", "heading 1/2/3", "h1 heading", "h 1 heading", "h2 heading", "h 2 heading", "h3 heading", "h 3 heading"
    - Contains: "make bold", "make italic", "bullet points", "bold text", "italic text"
    - Direct format commands: "h1", "h 1", "h2", "h 2", "h3", "h 3" (apply to next text or strip command)
@@ -388,6 +390,12 @@ Output: {"type": "command", "content": "grocery", "editorHTML": "<ul><li>grocery
 
 Input: "create a list"
 Output: {"type": "command", "content": "empty list", "editorHTML": "<ul><li>New item</li></ul>", "confidence": 0.9}
+
+Input: "create a numbered list first item shopping second item cooking third item cleaning"
+Output: {"type": "command", "content": "shopping, cooking, cleaning", "editorHTML": "<ol><li>shopping</li><li>cooking</li><li>cleaning</li></ol>", "confidence": 0.95}
+
+Input: "numbered list"
+Output: {"type": "command", "content": "empty numbered list", "editorHTML": "<ol><li>New item</li></ol>", "confidence": 0.9}
 
 Input: "make this a heading project update"  
 Output: {"type": "command", "content": "project update", "editorHTML": "<h2>project update</h2>", "confidence": 0.9}
@@ -551,13 +559,21 @@ Return ONLY the JSON response.`;
     // Simple command detection with basic HTML generation
     const hasListCommand = lowerTranscript.includes('create list') || 
                           lowerTranscript.includes('make list') ||
-                          lowerTranscript.includes('create a list');
+                          lowerTranscript.includes('create a list') ||
+                          lowerTranscript.includes('numbered list') ||
+                          lowerTranscript.includes('create numbered list') ||
+                          lowerTranscript.includes('ordered list');
     if (hasListCommand) {
-      // Find where the "create list" command appears in the transcript
+      // Determine list type
+      const isNumberedList = lowerTranscript.includes('numbered') || lowerTranscript.includes('ordered');
+      const listTag = isNumberedList ? 'ol' : 'ul';
+      // Find where the list command appears in the transcript
       const commandPatterns = [
-        /create\s+(?:a\s+)?list/i,
-        /make\s+(?:a\s+)?list/i,
-        /bullet\s+list/i
+        /create\s+(?:a\s+)?(?:numbered\s+)?list/i,
+        /make\s+(?:a\s+)?(?:numbered\s+)?list/i,
+        /bullet\s+list/i,
+        /numbered\s+list/i,
+        /ordered\s+list/i
       ];
       
       let commandEndIndex = -1;
@@ -586,14 +602,14 @@ Return ONLY the JSON response.`;
         
         if (items.length > 1) {
           // Multiple items detected
-          editorHTML = `<ul>${items.map(item => `<li>${item}</li>`).join('')}</ul>`;
+          editorHTML = `<${listTag}>${items.map(item => `<li>${item}</li>`).join('')}</${listTag}>`;
         } else {
           // Single item
-          editorHTML = `<ul><li>${content}</li></ul>`;
+          editorHTML = `<${listTag}><li>${content}</li></${listTag}>`;
         }
       } else {
         // No content after command
-        editorHTML = `<ul><li>New item</li></ul>`;
+        editorHTML = `<${listTag}><li>New item</li></${listTag}>`;
       }
       
       return {
@@ -672,7 +688,7 @@ Return ONLY the JSON response.`;
     const currentHTML = editor.getHTML();
     const currentText = editor.getText();
     
-    console.log('🔄 Processing intent:', { intentContent, recentContext, currentText: currentText.slice(-100) });
+    // console.log('🔄 Processing intent:', { intentContent, recentContext, currentText: currentText.slice(-100) });
     
     // Check if this is a formatting command (format:content pattern)
     if (intentContent.includes(':')) {
@@ -690,7 +706,7 @@ Return ONLY the JSON response.`;
     const simpleReplacementResult = this.performSimpleReplacement(intentContent, editor);
     if (simpleReplacementResult === '') {
       // Successfully replaced, return empty
-      console.log('✅ Simple replacement succeeded');
+      // console.log('✅ Simple replacement succeeded');
       return '';
     }
     
@@ -707,7 +723,7 @@ Return ONLY the JSON response.`;
     }
     
     // Final fallback: just add the intent content
-    console.log('⚠️ All replacement attempts failed, adding as new text');
+    // console.log('⚠️ All replacement attempts failed, adding as new text');
     return this.formatAsText(intentContent);
   }
 
@@ -785,7 +801,7 @@ Return ONLY the JSON response.`;
     
     try {
       const parsed = JSON.parse(content);
-      console.log('🤖 Grok replacement analysis:', parsed);
+      // console.log('🤖 Grok replacement analysis:', parsed);
       return parsed;
     } catch (parseError) {
       console.error('Failed to parse Grok replacement response:', { content, parseError });
@@ -801,7 +817,7 @@ Return ONLY the JSON response.`;
       const currentHTML = editor.getHTML();
       const currentText = editor.getText();
       
-      console.log('🔄 Attempting replacement:', { oldText, newText, strategy });
+      // console.log('🔄 Attempting replacement:', { oldText, newText, strategy });
       
       // Find the old text in the current content
       if (currentText.includes(oldText)) {
@@ -812,7 +828,7 @@ Return ONLY the JSON response.`;
         editor.commands.clearContent();
         editor.commands.insertContent(updatedHTML);
         
-        console.log('✅ Successfully replaced content:', { from: oldText, to: newText });
+        // console.log('✅ Successfully replaced content:', { from: oldText, to: newText });
         return ''; // Return empty since we've already updated the editor
       } else {
         console.warn('⚠️ Old text not found in current content, falling back to append');
@@ -827,7 +843,7 @@ Return ONLY the JSON response.`;
   private handleFormattingCommand(intentContent: string, editor: Editor): string {
     const [format, content] = intentContent.split(':', 2);
     
-    console.log('🎨 Applying formatting:', { format, content });
+    // console.log('🎨 Applying formatting:', { format, content });
     
     try {
       // Find the content in the editor and apply formatting
@@ -873,7 +889,7 @@ Return ONLY the JSON response.`;
             break;
         }
         
-        console.log(`✅ Applied ${format} formatting to: "${content}"`);
+        // console.log(`✅ Applied ${format} formatting to: "${content}"`);
         return ''; // Return empty since we've already updated the editor
       } else {
         console.warn('⚠️ Content not found in editor:', content);
@@ -905,7 +921,7 @@ Return ONLY the JSON response.`;
             
             // Show selection briefly before applying formatting
             editor.commands.setTextSelection({ from, to });
-            console.log('🎯 Selected text for heading formatting:', { from, to, content });
+            // console.log('🎯 Selected text for heading formatting:', { from, to, content });
             
             // Apply formatting after a brief delay to show selection
             setTimeout(() => {
@@ -923,7 +939,7 @@ Return ONLY the JSON response.`;
         
         if (!found) {
           // Fallback: just apply the heading to current selection/cursor position
-          console.log('⚠️ Text not found for heading, applying to current position');
+          // console.log('⚠️ Text not found for heading, applying to current position');
           formatFunction();
         }
       } else {
@@ -940,7 +956,7 @@ Return ONLY the JSON response.`;
             
             // Show selection briefly before applying formatting
             editor.commands.setTextSelection({ from, to });
-            console.log('🎯 Selected text for formatting:', { from, to, content });
+            // console.log('🎯 Selected text for formatting:', { from, to, content });
             
             // Apply formatting after a brief delay to show selection
             setTimeout(() => {
@@ -986,12 +1002,12 @@ Return ONLY the JSON response.`;
     const hasRelevantCorrection = lastContextSentence.toLowerCase().includes('amit') && 
                                  intentContent.toLowerCase().includes('manish');
     
-    console.log('🔍 Context analysis:', { 
-      lastContextSentence, 
-      isContextInEditor, 
-      hasRelevantCorrection, 
-      shouldAdd: !isContextInEditor && hasRelevantCorrection 
-    });
+    // console.log('🔍 Context analysis:', { 
+    //   lastContextSentence, 
+    //   isContextInEditor, 
+    //   hasRelevantCorrection, 
+    //   shouldAdd: !isContextInEditor && hasRelevantCorrection 
+    // });
     
     return !isContextInEditor && hasRelevantCorrection;
   }
@@ -1009,10 +1025,10 @@ Return ONLY the JSON response.`;
       correctedSentence = lastContextSentence.replace(/amit/gi, 'Manish');
     }
     
-    console.log('✅ Adding corrected context:', { 
-      original: lastContextSentence, 
-      corrected: correctedSentence 
-    });
+    // console.log('✅ Adding corrected context:', { 
+    //   original: lastContextSentence, 
+    //   corrected: correctedSentence 
+    // });
     
     return this.formatAsText(correctedSentence);
   }
@@ -1021,7 +1037,7 @@ Return ONLY the JSON response.`;
     const currentText = editor.getText();
     const currentHTML = editor.getHTML();
     
-    console.log('🔧 Attempting simple replacement:', { intentContent, currentText: currentText.slice(-100) });
+    // console.log('🔧 Attempting simple replacement:', { intentContent, currentText: currentText.slice(-100) });
     
     // Enhanced time/date pattern matching
     const timePattern = /\b(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM))\b/;
@@ -1047,7 +1063,7 @@ Return ONLY the JSON response.`;
           updatedHTML = updatedHTML.replace(timeRegex, newTime);
           replacementMade = true;
           
-          console.log('🕒 Time replacement:', { from: oldTime, to: newTime });
+          // console.log('🕒 Time replacement:', { from: oldTime, to: newTime });
         }
       }
       
@@ -1063,14 +1079,14 @@ Return ONLY the JSON response.`;
           updatedHTML = updatedHTML.replace(dayRegex, newDay);
           replacementMade = true;
           
-          console.log('📅 Day replacement:', { from: oldDay, to: newDay });
+          // console.log('📅 Day replacement:', { from: oldDay, to: newDay });
         }
       }
       
       if (replacementMade) {
         editor.commands.clearContent();
         editor.commands.insertContent(updatedHTML);
-        console.log('✅ Simple time/day replacement succeeded');
+        // console.log('✅ Simple time/day replacement succeeded');
         return '';
       }
     }
@@ -1090,13 +1106,13 @@ Return ONLY the JSON response.`;
         editor.commands.clearContent();
         editor.commands.insertContent(updatedHTML);
         
-        console.log('✅ Simple number replacement:', { from: oldNumber, to: newNumber });
+        // console.log('✅ Simple number replacement:', { from: oldNumber, to: newNumber });
         return '';
       }
     }
     
     // If no pattern matches, return the intent content to be added as new text
-    console.log('⚠️ No replacement pattern found');
+    // console.log('⚠️ No replacement pattern found');
     return this.formatAsText(intentContent);
   }
 
@@ -1109,7 +1125,7 @@ Return ONLY the JSON response.`;
     // "I have to schedule a meeting on Friday, 3PM. Sorry, Saturday, 5PM"
     // We should return "I have to schedule a meeting on Saturday, 5PM" (original + correction)
     
-    console.log('🔍 Extracting full content from intent:', transcript);
+    // console.log('🔍 Extracting full content from intent:', transcript);
     
     // PRIMARY PATTERN: Look for "CONTENT. Sorry, CORRECTION" or "CONTENT Sorry CORRECTION"
     const primaryPatterns = [
@@ -1128,7 +1144,7 @@ Return ONLY the JSON response.`;
         // Ensure we have substantial content in the original part
         if (originalPart.length > 10 && correctionPart) {
           const merged = this.mergeIntentContent(originalPart, correctionPart);
-          console.log('✅ Primary pattern merge:', { originalPart, correctionPart, merged });
+          // console.log('✅ Primary pattern merge:', { originalPart, correctionPart, merged });
           return merged;
         }
       }
@@ -1160,21 +1176,21 @@ Return ONLY the JSON response.`;
       }
     }
     
-    console.log('🔍 Secondary pattern parsing:', { beforeIntent, afterIntent });
+    // console.log('🔍 Secondary pattern parsing:', { beforeIntent, afterIntent });
     
     // If we have both parts and the original is substantial, merge them
     if (beforeIntent && beforeIntent.length > 10 && afterIntent) {
       const cleanedAfterIntent = this.cleanContentForCorrection(afterIntent);
       if (cleanedAfterIntent) {
         const mergedContent = this.mergeIntentContent(beforeIntent, cleanedAfterIntent);
-        console.log('✅ Secondary pattern merge:', mergedContent);
+        // console.log('✅ Secondary pattern merge:', mergedContent);
         return mergedContent;
       }
     }
     
     // FALLBACK: Just clean the transcript
     const cleanedTranscript = this.cleanContentForCorrection(transcript);
-    console.log('⚠️ Fallback to cleaned transcript:', cleanedTranscript);
+    // console.log('⚠️ Fallback to cleaned transcript:', cleanedTranscript);
     return cleanedTranscript || transcript;
   }
 
@@ -1183,11 +1199,11 @@ Return ONLY the JSON response.`;
    * This prevents incorrectly modifying existing content when we should be adding new content
    */
   private isIntentAboutDifferentContent(transcript: string, recentContext: string, currentEditorText: string): boolean {
-    console.log('🔍 Checking if intent is about different content:', {
-      transcript: transcript.slice(0, 50) + '...',
-      currentEditor: currentEditorText.slice(0, 50) + '...',
-      recentContext: recentContext.slice(-100)
-    });
+    // console.log('🔍 Checking if intent is about different content:', {
+    //   transcript: transcript.slice(0, 50) + '...',
+    //   currentEditor: currentEditorText.slice(0, 50) + '...',
+    //   recentContext: recentContext.slice(-100)
+    // });
     
     // Extract the main content from recent context (before any correction indicators)
     const contextSentences = recentContext.split(/[.!?]/).filter(s => s.trim().length > 10);
@@ -1203,13 +1219,13 @@ Return ONLY the JSON response.`;
     // Look for major topic differences
     const topicSimilarity = this.calculateTopicSimilarity(contextKeywords, editorKeywords);
     
-    console.log('🔍 Content analysis:', {
-      lastContextSentence: lastContextSentence.slice(0, 50) + '...',
-      contextKeywords,
-      editorKeywords,
-      topicSimilarity,
-      isDifferent: topicSimilarity < 0.3
-    });
+    // console.log('🔍 Content analysis:', {
+    //   lastContextSentence: lastContextSentence.slice(0, 50) + '...',
+    //   contextKeywords,
+    //   editorKeywords,
+    //   topicSimilarity,
+    //   isDifferent: topicSimilarity < 0.3
+    // });
     
     // If topic similarity is low, this is likely about different content
     return topicSimilarity < 0.3;
@@ -1247,11 +1263,11 @@ Return ONLY the JSON response.`;
    * that was recently added to the editor from the context
    */
   private isLateCorrection(transcript: string, recentContext: string, currentEditorText: string): boolean {
-    console.log('🔍 Checking if this is a late correction:', {
-      transcript: transcript.slice(0, 30) + '...',
-      recentContext: recentContext.slice(-50),
-      currentEditor: currentEditorText.slice(-50)
-    });
+    // console.log('🔍 Checking if this is a late correction:', {
+    //   transcript: transcript.slice(0, 30) + '...',
+    //   recentContext: recentContext.slice(-50),
+    //   currentEditor: currentEditorText.slice(-50)
+    // });
     
     // Look for patterns that suggest this is a correction to something recently said
     const hasTimeReference = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}:\d{2}|\d{1,2}\s*(?:am|pm))\b/i.test(transcript);
@@ -1259,7 +1275,7 @@ Return ONLY the JSON response.`;
     
     // Check if the correction matches something in the current editor content
     if (hasDateTimeCorrection) {
-      console.log('🕒 Found time/date correction that matches editor content');
+      // console.log('🕒 Found time/date correction that matches editor content');
       return true;
     }
     
@@ -1274,7 +1290,7 @@ Return ONLY the JSON response.`;
     
     // If we had a recent "sorry" and current transcript looks like a correction value
     if (hasRecentSorry && (hasTimeReference || /^\w+\s*\d*\s*(?:am|pm)?$/i.test(transcript.trim()))) {
-      console.log('🔄 Found late correction pattern - recent sorry + correction value');
+      // console.log('🔄 Found late correction pattern - recent sorry + correction value');
       return true;
     }
     
@@ -1283,7 +1299,7 @@ Return ONLY the JSON response.`;
 
   private mergeIntentContent(beforeIntent: string, correction: string): string {
     // Enhanced merging logic to handle complex time/date/number corrections
-    console.log('🔄 Merging intent content:', { beforeIntent, correction });
+    // console.log('🔄 Merging intent content:', { beforeIntent, correction });
     
     // Pattern 1: Combined day and time correction (e.g., "Saturday, 5PM")
     const combinedDayTimePattern = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)[,\s]+(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM))\b/i;
@@ -1310,7 +1326,7 @@ Return ONLY the JSON response.`;
         result = result.replace(beforeTimeMatch[0], newTime);
       }
       
-      console.log('✅ Combined day+time replacement:', result);
+      // console.log('✅ Combined day+time replacement:', result);
       return result;
     }
     
@@ -1321,7 +1337,7 @@ Return ONLY the JSON response.`;
     
     if (correctionTimeMatch && beforeTimeMatch) {
       const result = beforeIntent.replace(beforeTimeMatch[0], correctionTimeMatch[0]);
-      console.log('✅ Time replacement:', result);
+      // console.log('✅ Time replacement:', result);
       return result;
     }
     
@@ -1332,7 +1348,7 @@ Return ONLY the JSON response.`;
     
     if (correctionDayMatch && beforeDayMatch) {
       const result = beforeIntent.replace(beforeDayMatch[0], correctionDayMatch[0]);
-      console.log('✅ Day replacement:', result);
+      // console.log('✅ Day replacement:', result);
       return result;
     }
     
@@ -1346,7 +1362,7 @@ Return ONLY the JSON response.`;
       const lastNumberMatch = beforeIntent.match(/\b(\d+)\b(?!.*\b\d+\b)/);
       if (lastNumberMatch) {
         const result = beforeIntent.replace(lastNumberMatch[0], correctionNumberMatch[0]);
-        console.log('✅ Number replacement:', result);
+        // console.log('✅ Number replacement:', result);
         return result;
       }
     }
@@ -1362,13 +1378,13 @@ Return ONLY the JSON response.`;
       const lastNameMatch = beforeIntent.match(lastNamePattern);
       if (lastNameMatch) {
         const result = beforeIntent.replace(lastNameMatch[0], correctionNameMatch[0]);
-        console.log('✅ Name replacement:', result);
+        // console.log('✅ Name replacement:', result);
         return result;
       }
     }
     
     // Fallback: append correction to before content
-    console.log('⚠️ No pattern match found, combining both parts');
+    // console.log('⚠️ No pattern match found, combining both parts');
     return `${beforeIntent} ${correction}`;
   }
 
@@ -1383,7 +1399,7 @@ Return ONLY the JSON response.`;
     
     // Pattern 1: "Sorry." alone - return empty (user is preparing to correct)
     if (/^sorry\.?$/i.test(trimmedContent)) {
-      console.log('🧹 Removing standalone "Sorry" - waiting for correction');
+      // console.log('🧹 Removing standalone "Sorry" - waiting for correction');
       return '';
     }
     
@@ -1392,7 +1408,7 @@ Return ONLY the JSON response.`;
     const sorryCommaMatch = trimmedContent.match(sorryCommaPattern);
     if (sorryCommaMatch && sorryCommaMatch[1].trim()) {
       const correctionPart = sorryCommaMatch[1].trim();
-      console.log('🧹 Extracting correction from "Sorry, ...":', correctionPart);
+      // console.log('🧹 Extracting correction from "Sorry, ...":', correctionPart);
       return correctionPart;
     }
     
@@ -1402,7 +1418,7 @@ Return ONLY the JSON response.`;
     const sorryPrefixMatch = trimmedContent.match(sorryPrefixPattern);
     if (sorryPrefixMatch && sorryPrefixMatch[1].trim()) {
       const withoutSorry = sorryPrefixMatch[1].trim();
-      console.log('🧹 Removing "Sorry" prefix:', withoutSorry);
+      // console.log('🧹 Removing "Sorry" prefix:', withoutSorry);
       return withoutSorry;
     }
     
@@ -1411,7 +1427,7 @@ Return ONLY the JSON response.`;
     const midSorryPattern = /\.\s*sorry\.\s*/i;
     if (midSorryPattern.test(trimmedContent)) {
       const cleanedContent = trimmedContent.replace(midSorryPattern, '. ');
-      console.log('🧹 Removing mid-sentence "Sorry":', cleanedContent);
+      // console.log('🧹 Removing mid-sentence "Sorry":', cleanedContent);
       return cleanedContent;
     }
     
@@ -1446,16 +1462,16 @@ Return ONLY the JSON response.`;
     
     const shouldInclude = hasCorrection && (hasTimeReference || hasNumberReference || hasNameReference) && hasActionVerb;
     
-    console.log('🔍 Enhanced context analysis:', { 
-      hasCorrection, 
-      hasTimeReference,
-      hasNumberReference,
-      hasNameReference,
-      hasActionVerb,
-      hasCorrectionPattern: !!correctionMatch,
-      context: allContext.slice(-100),
-      shouldInclude
-    });
+    // console.log('🔍 Enhanced context analysis:', { 
+    //   hasCorrection, 
+    //   hasTimeReference,
+    //   hasNumberReference,
+    //   hasNameReference,
+    //   hasActionVerb,
+    //   hasCorrectionPattern: !!correctionMatch,
+    //   context: allContext.slice(-100),
+    //   shouldInclude
+    // });
     
     return shouldInclude;
   }
@@ -1478,13 +1494,13 @@ Return ONLY the JSON response.`;
     // Look for sentence patterns that indicate unprocessed content
     const hasActionPattern = /\b(I have|I need|I want|schedule|meeting|send|mail|call|visit)\b/i.test(recentContext);
     
-    console.log('🔍 Correction context check:', {
-      hasCorrection,
-      hasSubstantialContext,
-      hasActionPattern,
-      contextLength,
-      shouldInclude: hasCorrection && hasSubstantialContext && hasActionPattern
-    });
+    // console.log('🔍 Correction context check:', {
+    //   hasCorrection,
+    //   hasSubstantialContext,
+    //   hasActionPattern,
+    //   contextLength,
+    //   shouldInclude: hasCorrection && hasSubstantialContext && hasActionPattern
+    // });
     
     return hasCorrection && hasSubstantialContext && hasActionPattern;
   }
@@ -1494,12 +1510,12 @@ Return ONLY the JSON response.`;
    * This extracts the original sentence and applies the correction from the transcript
    */
   private buildCorrectedContentFromContext(transcript: string, recentContext: string): string {
-    console.log('🔨 Building corrected content from context:', { transcript, recentContext });
+    // console.log('🔨 Building corrected content from context:', { transcript, recentContext });
     
     // First, try to extract full content directly from the transcript itself
     const fullContentFromTranscript = this.extractFullContentFromIntent(transcript);
     if (fullContentFromTranscript && fullContentFromTranscript !== transcript && fullContentFromTranscript.length > transcript.length) {
-      console.log('✅ Used full content from transcript:', fullContentFromTranscript);
+      // console.log('✅ Used full content from transcript:', fullContentFromTranscript);
       return fullContentFromTranscript;
     }
     
@@ -1528,18 +1544,18 @@ Return ONLY the JSON response.`;
     // Extract the correction part from the transcript
     const correctionPart = this.extractCorrectionFromTranscript(transcript);
     if (!correctionPart) {
-      console.log('⚠️ No correction found, returning original sentence:', originalSentence);
+      // console.log('⚠️ No correction found, returning original sentence:', originalSentence);
       return originalSentence;
     }
     
     // Apply the correction to the original sentence
     const correctedSentence = this.mergeIntentContent(originalSentence, correctionPart);
     
-    console.log('✅ Built corrected content:', {
-      original: originalSentence,
-      correction: correctionPart,
-      result: correctedSentence
-    });
+    // console.log('✅ Built corrected content:', {
+    //   original: originalSentence,
+    //   correction: correctionPart,
+    //   result: correctedSentence
+    // });
     
     return correctedSentence;
   }
@@ -1562,7 +1578,7 @@ Return ONLY the JSON response.`;
       const match = transcript.match(pattern);
       if (match && match[1]) {
         const extraction = match[1].trim();
-        console.log('📤 Extracted correction:', extraction);
+        // console.log('📤 Extracted correction:', extraction);
         return extraction;
       }
     }
@@ -1613,7 +1629,7 @@ Return ONLY the JSON response.`;
           // DON'T replace if the paragraph has formatting - just append new content
           if (lastParagraph.includes('<strong>') || lastParagraph.includes('<em>') || 
               lastParagraph.includes('<b>') || lastParagraph.includes('<i>')) {
-            console.log('🎨 Preserving formatting - appending as new paragraph instead');
+            // console.log('🎨 Preserving formatting - appending as new paragraph instead');
             return `<p>${content.trim()}</p>`;
           }
           
@@ -1667,7 +1683,7 @@ Return ONLY the JSON response.`;
       !invalidPatterns.some(pattern => pattern.test(trimmedHtml))
     );
     
-    console.log('🔍 HTML Validation:', { html: trimmedHtml, isValid: hasValidStructure });
+    // console.log('🔍 HTML Validation:', { html: trimmedHtml, isValid: hasValidStructure });
     return hasValidStructure;
   }
 
@@ -1675,18 +1691,31 @@ Return ONLY the JSON response.`;
     const lowerTranscript = transcript.toLowerCase();
     return lowerTranscript.includes('create list') || 
            lowerTranscript.includes('make list') ||
-           lowerTranscript.includes('create a list');
+           lowerTranscript.includes('create a list') ||
+           lowerTranscript.includes('numbered list') ||
+           lowerTranscript.includes('create numbered list') ||
+           lowerTranscript.includes('create a numbered list') ||
+           lowerTranscript.includes('ordered list');
   }
 
   private startListMode(transcript: string): string {
-    console.log('📋 Starting list mode');
-    
-    // Find where the "create list" command appears in the transcript
     const lowerTranscript = transcript.toLowerCase();
+    
+    // Determine list type based on command
+    let listType: 'ul' | 'ol' = 'ul'; // default to unordered
+    if (lowerTranscript.includes('numbered') || lowerTranscript.includes('ordered')) {
+      listType = 'ol';
+    }
+    
+    // console.log(`📋 Starting ${listType === 'ol' ? 'numbered' : 'bullet'} list mode`);
+    
+    // Find where the list command appears in the transcript
     const commandPatterns = [
-      /create\s+(?:a\s+)?list/i,
-      /make\s+(?:a\s+)?list/i,
-      /bullet\s+list/i
+      /create\s+(?:a\s+)?(?:numbered\s+)?list/i,
+      /make\s+(?:a\s+)?(?:numbered\s+)?list/i,
+      /bullet\s+list/i,
+      /numbered\s+list/i,
+      /ordered\s+list/i
     ];
     
     let commandEndIndex = -1;
@@ -1709,12 +1738,13 @@ Return ONLY the JSON response.`;
     // Parse initial content for multiple items (only if there's content after the command)
     const initialItems = initialContent ? this.parseListItems(initialContent) : [];
     
-    console.log('📋 Command found at position', commandEndIndex, 'initial content:', initialContent, 'items:', initialItems);
+    // console.log('📋 Command found at position', commandEndIndex, 'initial content:', initialContent, 'items:', initialItems);
     
     this.context.listMode = {
       active: true,
       items: initialItems,
-      startTime: Date.now()
+      startTime: Date.now(),
+      type: listType
     };
     
     // Return empty string - we're collecting items, not inserting yet
@@ -1724,7 +1754,7 @@ Return ONLY the JSON response.`;
   private autoFinalizationTimeout: NodeJS.Timeout | null = null;
 
   private handleListModeInput(transcript: string): string {
-    console.log('📝 Adding to list:', transcript);
+    // console.log('📝 Adding to list:', transcript);
     
     // Check for end list commands
     const lowerTranscript = transcript.toLowerCase();
@@ -1738,11 +1768,11 @@ Return ONLY the JSON response.`;
     const items = this.parseListItems(transcript);
     this.context.listMode.items.push(...items);
     
-    console.log('📋 Current list items:', this.context.listMode.items);
+    // console.log('📋 Current list items:', this.context.listMode.items);
     
     // Check if we should auto-finalize (after a pause or many items)
     if (this.context.listMode.items.length >= 4) {
-      console.log('📝 Auto-finalizing list (reached 4 items)');
+      // console.log('📝 Auto-finalizing list (reached 4 items)');
       return this.finalizeList();
     }
     
@@ -1753,7 +1783,7 @@ Return ONLY the JSON response.`;
     
     this.autoFinalizationTimeout = setTimeout(() => {
       if (this.context.listMode.active && this.context.listMode.items.length > 0) {
-        console.log('⏰ Auto-finalizing list due to inactivity');
+        // console.log('⏰ Auto-finalizing list due to inactivity');
         const finalizedHTML = this.finalizeList();
         
         // Trigger a callback to insert the HTML into the editor
@@ -1795,7 +1825,7 @@ Return ONLY the JSON response.`;
       return '';
     }
     
-    console.log('✅ Finalizing list with items:', this.context.listMode.items);
+    // console.log('✅ Finalizing list with items:', this.context.listMode.items);
     
     // Clear any pending auto-finalization timeout
     if (this.autoFinalizationTimeout) {
@@ -1803,13 +1833,15 @@ Return ONLY the JSON response.`;
       this.autoFinalizationTimeout = null;
     }
     
-    const listHTML = `<ul>${this.context.listMode.items.map(item => `<li>${item}</li>`).join('')}</ul>`;
+    const listTag = this.context.listMode.type;
+    const listHTML = `<${listTag}>${this.context.listMode.items.map(item => `<li>${item}</li>`).join('')}</${listTag}>`;
     
     // Reset list mode
     this.context.listMode = {
       active: false,
       items: [],
-      startTime: 0
+      startTime: 0,
+      type: 'ul'
     };
     
     return listHTML;
@@ -1860,7 +1892,7 @@ Return ONLY the JSON response.`;
       level = 3;
     }
     
-    console.log(`📝 Starting heading mode (H${level})`);
+    // console.log(`📝 Starting heading mode (H${level})`);
     
     this.context.headingMode = {
       active: true,
@@ -1873,7 +1905,7 @@ Return ONLY the JSON response.`;
   }
 
   private handleHeadingModeInput(transcript: string): string {
-    console.log(`📝 Processing heading input (H${this.context.headingMode.level}):`, transcript);
+    // console.log(`📝 Processing heading input (H${this.context.headingMode.level}):`, transcript);
     
     const level = this.context.headingMode.level;
     
@@ -1899,7 +1931,7 @@ Return ONLY the JSON response.`;
       const match = cleanContent.match(pattern);
       if (match && match[1]) {
         cleanContent = match[1].trim();
-        console.log('📝 Extracted content after heading command:', cleanContent);
+        // console.log('📝 Extracted content after heading command:', cleanContent);
         break;
       }
     }
@@ -1936,7 +1968,7 @@ Return ONLY the JSON response.`;
       startTime: 0
     };
     
-    console.log(`✅ Created H${level} heading with clean content:`, { original: transcript, cleaned: cleanContent, html: headingHTML });
+    // console.log(`✅ Created H${level} heading with clean content:`, { original: transcript, cleaned: cleanContent, html: headingHTML });
     return headingHTML;
   }
 
@@ -1954,7 +1986,8 @@ Return ONLY the JSON response.`;
       listMode: {
         active: false,
         items: [],
-        startTime: 0
+        startTime: 0,
+        type: 'ul'
       },
       continuousText: {
         accumulated: '',
@@ -1984,7 +2017,8 @@ Return ONLY the JSON response.`;
       listMode: {
         active: this.context.listMode.active,
         itemCount: this.context.listMode.items.length,
-        items: this.context.listMode.items
+        items: this.context.listMode.items,
+        type: this.context.listMode.type
       },
       headingMode: {
         active: this.context.headingMode.active,

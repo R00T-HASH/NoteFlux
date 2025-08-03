@@ -59,9 +59,9 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
     onProcessed: (transcript, _, wasCommand) => {
       if (wasCommand) {
         analytics.trackFeatureUsed('voice_command_executed', { command: transcript });
-        console.log(`✅ Voice command executed: ${transcript}`);
+        // console.log(`✅ Voice command executed: ${transcript}`);
       } else {
-        console.log(`📝 Regular text processed: ${transcript}`);
+        // console.log(`📝 Regular text processed: ${transcript}`);
       }
       
       // Update accumulated transcript for display
@@ -141,7 +141,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
             await voiceProcessing.processTranscript(data);
           },
           (error: any) => {
-            console.error('Deepgram error:', error);
+            // console.error('Deepgram error:', error);
             setIsListening(false);
             
             // Track error
@@ -162,7 +162,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
           },
           () => {
             setIsListening(true);
-            toast(`Listening with Deepgram Nova 2...`);
+            // toast(`Listening with Deepgram Nova 2...`);
           },
           () => {
             setIsListening(false);
@@ -173,7 +173,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
         );
       }
     } catch (error) {
-      console.error("Error with Deepgram:", error);
+      // console.error("Error with Deepgram:", error);
       toast("Failed to start Deepgram transcription. Please check your API key.");
       analytics.trackError('deepgram_initialization_error', error instanceof Error ? error.message : 'Unknown error');
     }
@@ -196,7 +196,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
         try {
           recognitionRef.current.abort();
         } catch (e) {
-          console.error("Error aborting speech recognition:", e);
+          // console.error("Error aborting speech recognition:", e);
         }
       }
       */
@@ -276,7 +276,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
         onTranscriptSaved(contentToSave);
       }
     } catch (error) {
-      console.error('Error saving transcript:', error);
+      // console.error('Error saving transcript:', error);
       
       // Track save error
       analytics.trackError('transcript_save_error', error instanceof Error ? error.message : 'Unknown save error', {
@@ -317,7 +317,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
   // Handle editor ready callback to get editor instance
   const handleEditorReady = (editor: Editor) => {
     setCurrentEditor(editor);
-    console.log('🎯 TipTap editor ready for voice commands');
+    // console.log('🎯 TipTap editor ready for voice commands');
   };
 
 
@@ -361,7 +361,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
                     <div className="flex items-center justify-center">
                       <div className="pulse-ring mr-2"></div>
                       <span>
-                        Listening with {selectedVoiceAgent === 'deepgram' ? 'Deepgram Nova 2' : 'WebSpeech'}
+                        Listening...
                       </span>
                     </div>
                   ) : isThinking ? (
@@ -406,7 +406,7 @@ const VoiceChat = ({ onTranscriptSaved, onUsageUpdated, onTranscriptUpdate }: Vo
                   onEditorReady={handleEditorReady}
                   isListening={isListening}
                   onVoiceCommand={(command) => {
-                    console.log('Voice command received:', command);
+                    // console.log('Voice command received:', command);
                     // Voice commands are now handled through the enhanced processor
                   }}
                   enableSaveFeatures={true}

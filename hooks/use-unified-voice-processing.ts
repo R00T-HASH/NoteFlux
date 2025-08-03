@@ -21,7 +21,7 @@ export const useUnifiedVoiceProcessing = ({
   const getProcessor = useCallback(() => {
     if (!processorRef.current) {
       processorRef.current = new UnifiedVoiceProcessor();
-      console.log('🎯 Unified voice processor initialized');
+      // console.log('🎯 Unified voice processor initialized');
     }
     return processorRef.current;
   }, []);
@@ -31,7 +31,7 @@ export const useUnifiedVoiceProcessing = ({
     if (editor) {
       const processor = getProcessor();
       processor.setAutoFinalizeCallback((html: string) => {
-        console.log('⏰ Auto-finalizing list and inserting into editor:', html);
+        // console.log('⏰ Auto-finalizing list and inserting into editor:', html);
         try {
           editor.chain().focus().insertContent(html).run();
           
@@ -43,10 +43,10 @@ export const useUnifiedVoiceProcessing = ({
           }, 150);
           
           onProcessed?.('Auto-finalized list', html, true);
-          toast('✅ List completed automatically', { duration: 2000 });
+          // toast('✅ List completed automatically', { duration: 2000 });
         } catch (error) {
-          console.error('❌ Error inserting auto-finalized list:', error);
-          toast('⚠️ Error completing list automatically', { duration: 2000 });
+          // console.error('❌ Error inserting auto-finalized list:', error);
+          // toast('⚠️ Error completing list automatically', { duration: 2000 });
         }
       });
     }
@@ -58,7 +58,7 @@ export const useUnifiedVoiceProcessing = ({
    */
   const processTranscript = useCallback(async (data: DeepgramTranscriptData): Promise<boolean> => {
     if (!editor) {
-      console.warn('⚠️ Editor not available for voice processing');
+      // console.warn('⚠️ Editor not available for voice processing');
       return false;
     }
 
@@ -91,13 +91,13 @@ export const useUnifiedVoiceProcessing = ({
           
           // Show status message for commands
           if (wasCommand) {
-            toast('✅ Voice command processed', { duration: 1500 });
+            // toast('✅ Voice command processed', { duration: 1500 });
           }
           
           return true;
         } catch (insertError) {
-          console.error('❌ Error inserting HTML into editor:', insertError);
-          console.log('🔍 Problematic HTML:', htmlToInsert);
+          // console.error('❌ Error inserting HTML into editor:', insertError);
+          // console.log('🔍 Problematic HTML:', htmlToInsert);
           
           // Fallback: insert as plain text
           try {
@@ -111,10 +111,10 @@ export const useUnifiedVoiceProcessing = ({
             }, 150);
             
             onProcessed?.(data.transcript, `<p>${data.transcript}</p>`, false);
-            toast('⚠️ Command processed as text due to formatting issue', { duration: 2000 });
+            // toast('⚠️ Command processed as text due to formatting issue', { duration: 2000 });
             return true;
           } catch (fallbackError) {
-            console.error('❌ Even fallback insertion failed:', fallbackError);
+            // console.error('❌ Even fallback insertion failed:', fallbackError);
             throw fallbackError;
           }
         }
@@ -124,23 +124,23 @@ export const useUnifiedVoiceProcessing = ({
         const stats = processor.getStats();
         
         if (stats.listMode.active) {
-          console.log('📋 List mode active - collecting items:', stats.listMode.items);
+          // console.log('📋 List mode active - collecting items:', stats.listMode.items);
           onProcessed?.(data.transcript, '', false); // Empty HTML but still processed
           
           // Show status message
           if (stats.listMode.itemCount === 1) {
-            toast('📋 Started list - keep adding items or say "end list"', { duration: 2000 });
+            // toast('📋 Started list - keep adding items or say "end list"', { duration: 2000 });
           } else if (stats.listMode.itemCount > 1) {
-            toast(`📋 List: ${stats.listMode.itemCount} items - say "end list" to finish`, { duration: 2000 });
+            // toast(`📋 List: ${stats.listMode.itemCount} items - say "end list" to finish`, { duration: 2000 });
           }
           
           return true;
         } else if (stats.headingMode.active) {
-          console.log(`📝 Heading mode active (H${stats.headingMode.level}) - waiting for content`);
+          // console.log(`📝 Heading mode active (H${stats.headingMode.level}) - waiting for content`);
           onProcessed?.(data.transcript, '', false); // Empty HTML but still processed
           
           // Show status message
-          toast(`📝 H${stats.headingMode.level} heading mode - speak your heading text`, { duration: 2000 });
+          // toast(`📝 H${stats.headingMode.level} heading mode - speak your heading text`, { duration: 2000 });
           
           return true;
         }
@@ -149,8 +149,8 @@ export const useUnifiedVoiceProcessing = ({
       return false;
       
     } catch (error) {
-      console.error('❌ Error processing voice transcript:', error);
-      toast.error('Error processing voice input');
+      // console.error('❌ Error processing voice transcript:', error);
+      // toast.error('Error processing voice input');
       return false;
     }
   }, [editor, onProcessed, getProcessor]);
@@ -179,7 +179,7 @@ export const useUnifiedVoiceProcessing = ({
   const clearContext = useCallback(() => {
     const processor = getProcessor();
     processor.clearContext();
-    console.log('🗑️ Voice processor context cleared');
+    // console.log('🗑️ Voice processor context cleared');
   }, [getProcessor]);
 
   /**

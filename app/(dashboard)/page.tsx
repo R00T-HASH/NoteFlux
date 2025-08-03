@@ -51,7 +51,7 @@ export default function Home() {
 
   const handleTranscriptUpdate = (transcript: string) => {
     // Handle transcript updates for analytics or other features
-    console.log('Transcript updated:', transcript.length, 'characters');
+    // console.log('Transcript updated:', transcript.length, 'characters');
   };
 
   return (
