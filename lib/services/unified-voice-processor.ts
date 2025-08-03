@@ -1750,17 +1750,17 @@ Return ONLY the JSON response.`;
     // More liberal matching - if we have correction + substantial context + any relevant pattern
     const shouldInclude = hasCorrection && hasSubstantialContext && (hasActionPattern || hasTimePattern || hasNounPattern);
     
-    console.log('🔍 Enhanced correction context check:', {
-      hasCorrection,
-      hasSubstantialContext,
-      hasActionPattern,
-      hasTimePattern, 
-      hasNounPattern,
-      contextLength,
-      recentContext: recentContext.slice(-100),
-      transcript: transcript.slice(0, 50),
-      shouldInclude
-    });
+    // console.log('🔍 Enhanced correction context check:', {
+    //   hasCorrection,
+    //   hasSubstantialContext,
+    //   hasActionPattern,
+    //   hasTimePattern, 
+    //   hasNounPattern,
+    //   contextLength,
+    //   recentContext: recentContext.slice(-100),
+    //   transcript: transcript.slice(0, 50),
+    //   shouldInclude
+    // });
     
     return shouldInclude;
   }
@@ -1906,7 +1906,7 @@ Return ONLY the JSON response.`;
           // Let TipTap editor handle autoscroll for continuous text updates
           setTimeout(() => {
             const { selection } = editor.state;
-            const { from, to } = selection;
+            const { to } = selection;
             editor.commands.setTextSelection({ from: to, to: to });
           }, 50);
           
