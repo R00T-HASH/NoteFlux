@@ -194,24 +194,24 @@ export class UnifiedVoiceProcessor {
         }
         
         // Check if there's actually content in the editor to modify
-        const currentText = editor.getText().trim();
-        const recentContext = this.context.previousChunks.slice(-3).join(' ');
+        const currentEditorText = editor.getText().trim();
+        const recentContextChunks = this.context.previousChunks.slice(-3).join(' ');
         
         // console.log('🔍 Intent processing context:', {
-        //   currentTextLength: currentText.length,
-        //   recentContext: recentContext.slice(-100),
+        //   currentTextLength: currentEditorText.length,
+        //   recentContext: recentContextChunks.slice(-100),
         //   intentContent: result.content
         // });
         
-        if (!currentText) {
+        if (!currentEditorText) {
           // console.log('📝 No existing content to modify - checking for unprocessed context');
           
           // ENHANCED: Check if recent context should be included - more aggressive detection
-          const shouldIncludeContext = this.hasUnprocessedContextForCorrection(transcript, recentContext);
+          const shouldIncludeContext = this.hasUnprocessedContextForCorrection(transcript, recentContextChunks);
           
           if (shouldIncludeContext) {
             // console.log('📝 Including unprocessed context with correction');
-            const contextualContent = this.buildCorrectedContentFromContext(transcript, recentContext);
+            const contextualContent = this.buildCorrectedContentFromContext(transcript, recentContextChunks);
             return this.formatAsText(contextualContent);
           }
           
@@ -229,13 +229,13 @@ export class UnifiedVoiceProcessor {
         }
         
         // Check if the intent is about DIFFERENT content than what's in the editor
-        const isAboutDifferentContent = this.isIntentAboutDifferentContent(transcript, recentContext, currentText);
+        const isAboutDifferentContent = this.isIntentAboutDifferentContent(transcript, recentContextChunks, currentEditorText);
         
         if (isAboutDifferentContent) {
           // console.log('🆕 Intent is about different content - adding corrected content');
           
           // Try to build from context
-          const contextualContent = this.buildCorrectedContentFromContext(transcript, recentContext);
+          const contextualContent = this.buildCorrectedContentFromContext(transcript, recentContextChunks);
           if (contextualContent && contextualContent !== result.content) {
             // console.log('✅ Adding contextual content:', contextualContent);
             return this.formatAsText(contextualContent);
@@ -259,6 +259,20 @@ export class UnifiedVoiceProcessor {
         if (!cleanedContent.trim()) {
           // console.log('📝 Content cleaned to empty - waiting for correction');
           return '';
+        }
+        
+        // ENHANCED: Check if this text looks like a late correction before treating as regular text
+        const currentEditorText2 = editor.getText().trim();
+        const recentContextChunks2 = this.context.previousChunks.slice(-3).join(' ');
+        const isLateCorrection = this.isLateCorrection(cleanedContent, recentContextChunks2, currentEditorText2);
+        
+        if (isLateCorrection) {
+          // console.log('🔄 Late correction detected in TEXT case - performing correction');
+          const sentenceReplacementResult = this.performSentenceReplacement(cleanedContent, editor);
+          if (sentenceReplacementResult === '') {
+            // console.log('✅ Text late correction sentence replacement succeeded');
+            return '';
+          }
         }
         
         // Regular text - accumulate for continuous flow
@@ -747,6 +761,18 @@ Return ONLY the JSON response.`;
     if (intelligentReplacementResult === '') {
       // console.log('✅ Intelligent replacement succeeded');
       return '';
+    }
+    
+    // ENHANCED: Check if this is a late correction first  
+    const isLateCorrectionForIntent = this.isLateCorrection(intentContent, recentContext, currentText);
+    
+    if (isLateCorrectionForIntent) {
+      // console.log('🔄 Late correction detected - performing sentence replacement');
+      const sentenceReplacementResult = this.performSentenceReplacement(intentContent, editor);
+      if (sentenceReplacementResult === '') {
+        // console.log('✅ Late correction sentence replacement succeeded');
+        return '';
+      }
     }
     
     // NEW: Try sentence-level replacement for pause corrections
@@ -1497,8 +1523,8 @@ Return ONLY the JSON response.`;
     
     // PRIMARY PATTERN: Look for "CONTENT. Sorry, CORRECTION" or "CONTENT Sorry CORRECTION"
     const primaryPatterns = [
-      /^(.+?)\.?\s*sorry[,\s]*(.+)$/i,               // "Content. Sorry, correction" (more flexible)
-      /^(.+?)\s+sorry[,\s]+(.+)$/i,                   // "Content sorry correction"  
+      /^(.+?)\.?\s*(?:sorry|soory)[,\s]*(.+)$/i,      // "Content. Sorry, correction" (more flexible, handles typos)
+      /^(.+?)\s+(?:sorry|soory)[,\s]+(.+)$/i,         // "Content sorry correction" (handles typos)
       /^(.+?)(?:\.\s*)?actually[,\s]*(.+)$/i,        // "Content. Actually, correction"
       /^(.+?)(?:\.\s*)?make that[,\s]*(.+)$/i        // "Content. Make that correction"
     ];
@@ -1647,18 +1673,30 @@ Return ONLY the JSON response.`;
       return true;
     }
     
-    // Check if recent context shows a correction pattern where part was already processed
-    // Pattern: "Content was added. Sorry. [This correction]"
-    const correctionPatterns = [
+    // ENHANCED: Check if recent context contains "Sorry" and current transcript looks like correction value
+    const recentSorryPattern = /\b(?:sorry|soory)\b/i;
+    const hasRecentSorry = recentSorryPattern.test(recentContext);
+    
+    // Check if current transcript looks like a correction value (day+time, just day, just time)
+    const looksLikeCorrectionValue = /^(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:[,\s]*\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?$|^\d{1,2}(?::\d{2})?\s*(?:am|pm)$|^(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(transcript.trim());
+    
+    // If we had recent "sorry" and current looks like correction value, it's likely a late correction
+    if (hasRecentSorry && looksLikeCorrectionValue) {
+      // console.log('🔄 Enhanced: Found late correction pattern - recent sorry + correction value');
+      return true;
+    }
+    
+    // Legacy patterns for backward compatibility 
+    const legacyCorrectionPatterns = [
       /\.\s*sorry\s*\.\s*$/i,  // Recent context ends with ". Sorry."
       /\bsorry\b.*$/i          // Contains "sorry" towards the end
     ];
     
-    const hasRecentSorry = correctionPatterns.some(pattern => recentContext.match(pattern));
+    const hasLegacySorry = legacyCorrectionPatterns.some(pattern => recentContext.match(pattern));
     
     // If we had a recent "sorry" and current transcript looks like a correction value
-    if (hasRecentSorry && (hasTimeReference || /^\w+\s*\d*\s*(?:am|pm)?$/i.test(transcript.trim()))) {
-      // console.log('🔄 Found late correction pattern - recent sorry + correction value');
+    if (hasLegacySorry && (hasTimeReference || /^\w+\s*\d*\s*(?:am|pm)?$/i.test(transcript.trim()))) {
+      // console.log('🔄 Legacy: Found late correction pattern - recent sorry + correction value');
       return true;
     }
     
@@ -1680,15 +1718,19 @@ Return ONLY the JSON response.`;
       // Replace both day and time in the original
       let result = beforeIntent;
       
-      // Replace day
-      const dayPattern = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
+      // Replace day (but preserve original case and handle typos)
+      const dayPattern = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|thruday|thurday|thirsday)\b/i;
       const beforeDayMatch = beforeIntent.match(dayPattern);
       if (beforeDayMatch) {
         result = result.replace(beforeDayMatch[0], newDay);
+      } else {
+        // If no day found in original, append the correction
+        result = `${beforeIntent} ${correction}`;
+        return result;
       }
       
       // Replace time
-      const timePattern = /\b(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM))\b/i;
+      const timePattern = /\b(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)|\d{1,2}\s*(?:am|pm|AM|PM))\b/i;
       const beforeTimeMatch = result.match(timePattern);
       if (beforeTimeMatch) {
         result = result.replace(beforeTimeMatch[0], newTime);
@@ -1699,7 +1741,7 @@ Return ONLY the JSON response.`;
     }
     
     // Pattern 2: Time replacement only (3PM -> 5PM)
-    const timePattern = /\b(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM))\b/i;
+    const timePattern = /\b(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)|\d{1,2}\s*(?:am|pm|AM|PM))\b/i;
     const correctionTimeMatch = correction.match(timePattern);
     const beforeTimeMatch = beforeIntent.match(timePattern);
     
@@ -1710,7 +1752,7 @@ Return ONLY the JSON response.`;
     }
     
     // Pattern 3: Day replacement only (Friday -> Saturday)
-    const dayPattern = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
+    const dayPattern = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|thruday|thurday|thirsday)\b/i;
     const correctionDayMatch = correction.match(dayPattern);
     const beforeDayMatch = beforeIntent.match(dayPattern);
     
@@ -1765,14 +1807,14 @@ Return ONLY the JSON response.`;
 
     const trimmedContent = content.trim();
     
-    // Pattern 1: "Sorry." alone - return empty (user is preparing to correct)
-    if (/^sorry\.?$/i.test(trimmedContent)) {
+    // Pattern 1: "Sorry." alone - return empty (user is preparing to correct, handle typos)
+    if (/^(?:sorry|soory)\.?$/i.test(trimmedContent)) {
       // console.log('🧹 Removing standalone "Sorry" - waiting for correction');
       return '';
     }
     
-    // Pattern 2: "Sorry, [correction]" - extract just the correction part
-    const sorryCommaPattern = /^sorry[,\s]+(.+)/i;
+    // Pattern 2: "Sorry, [correction]" - extract just the correction part (handle typos)
+    const sorryCommaPattern = /^(?:sorry|soory)[,\s]+(.+)/i;
     const sorryCommaMatch = trimmedContent.match(sorryCommaPattern);
     if (sorryCommaMatch && sorryCommaMatch[1].trim()) {
       const correctionPart = sorryCommaMatch[1].trim();
@@ -1781,8 +1823,8 @@ Return ONLY the JSON response.`;
     }
     
     // Pattern 3: Remove "Sorry" at the beginning when followed by correction context
-    // Example: "Sorry Saturday 1PM" -> "Saturday 1PM"
-    const sorryPrefixPattern = /^sorry\s+(.+)/i;
+    // Example: "Sorry Saturday 1PM" -> "Saturday 1PM" (handle typos)
+    const sorryPrefixPattern = /^(?:sorry|soory)\s+(.+)/i;
     const sorryPrefixMatch = trimmedContent.match(sorryPrefixPattern);
     if (sorryPrefixMatch && sorryPrefixMatch[1].trim()) {
       const withoutSorry = sorryPrefixMatch[1].trim();
